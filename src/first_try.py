@@ -4,6 +4,8 @@ import catanatron.gym
 
 env = gymnasium.make("catanatron/Catanatron-v0")
 observation, info = env.reset()
+print(info)
+print(observation)
 for _ in range(1000):
     # your agent here (this takes random actions)
     action = random.choice(info["valid_actions"])
