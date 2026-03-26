@@ -1,60 +1,64 @@
 import random
+import torch
 import gymnasium
 import catanatron.gym
 from catanatron import Color
 from catanatron.players.weighted_random import WeightedRandomPlayer
-from utils.constants import device
+from utils.constants import device, MAX_ACTIONS
+from models.dqn import reward_function, Transition, ReplayMemory, DQN, optimize_model
 
-from catanatron.features import player_features
+
+LEARNING_RATE = 3e-4
 
 env = gymnasium.make(
     "catanatron/Catanatron-v0",
     config={
         "enemies": [
             WeightedRandomPlayer(Color.RED),
-            WeightedRandomPlayer(Color.ORANGE),
             WeightedRandomPlayer(Color.WHITE),
+            WeightedRandomPlayer(Color.ORANGE),
         ],
+        "reward_function": reward_function,
     },
 )
 
-def get_feature_index_map(env):
-    # Access internal game (hacky but works)
-    game = env.unwrapped.game
+observation, _ = env.reset()
 
-    # Rebuild feature dict manually (using same functions)
-    features = {}
-    features.update(player_features(game, Color.BLUE))
-    # TODO: also include other feature extractors if needed
+policy_net = DQN(observation.shape[0], MAX_ACTIONS).to(device)
+target_net = DQN(observation.shape[0], MAX_ACTIONS).to(device)
 
-    keys = sorted(features.keys())
+target_net.load_state_dict(policy_net.state_dict())
+target_net.eval()
 
-    return {k: i for i, k in enumerate(keys)}
+memory = ReplayMemory(10000)
 
-observation, info = env.reset()
+optimizer = torch.optim.AdamW(policy_net.parameters(), lr=LEARNING_RATE, amsgrad=True)
 
-for _ in range(5000):
-    action = random.choice(info["valid_actions"])
+epsilon = 1.0
+EPS_DECAY = 0.995
+EPS_MIN = 0.01
 
-    observation, reward, terminated, truncated, info = env.step(action) # CHECKME: reward is it good?
-    done = terminated or truncated
-    if done:
-        break
-        observation, info = env.reset()
+for episode in range(5000):
+    observation, info = env.reset()
+    done = False
 
-feature_map = get_feature_index_map(env)
+    while not done:
+        action = policy_net.select_action(observation, info["valid_actions"], epsilon)
 
-vp_index = feature_map["P0_ACTUAL_VPS"]
-pvp_index = feature_map["P0_PUBLIC_VPS"]
-print(vp_index)
-print(pvp_index)
-print(feature_map["P0_SETTLEMENTS_LEFT"])
-print(feature_map["P0_ROADS_LEFT"])
-print(observation[vp_index])
-print(observation[pvp_index])
-print(env.observation_space)
-print(observation.shape)
-print(observation)
-print(info)
+        next_obs, reward, terminated, truncated, next_info = env.step(action)
+        done = terminated or truncated
+
+        memory.push(Transition(observation, info["valid_actions"], action, next_obs, next_info["valid_actions"], reward, done))
+
+        observation = next_obs
+        info = next_info
+
+        optimize_model(optimizer, policy_net, target_net, memory)
+
+    epsilon = max(EPS_MIN, epsilon * EPS_DECAY)
+
+    # update target network occasionally
+    if episode % 10 == 0:
+        target_net.load_state_dict(policy_net.state_dict())
 
 env.close()
