@@ -5,7 +5,15 @@ from catanatron import Game, Color
 from utils.constants import device
 
 Transition = namedtuple("Transition",
-                        ("observation", "valid_actions", "action", "next_observation", "next_valid_actions", "reward", "done"))
+                            ("observation",
+                             "valid_actions",
+                             "action",
+                             "next_observation",
+                             "next_valid_actions",
+                             "reward",
+                             "done"
+                            )
+                        )
 
 """
 
@@ -16,8 +24,8 @@ def reward_function(game: Game, p0_color: Color):
          reward_function.last_points = 1
 
     # VP gain. Can happen with settlements, castles, longest roads, biggest army, or just vp gain from casino
-    reward += game.state.player_state["P0_VICTORY_POINTS"] - reward_function.last_points
-    reward_function.last_points = game.state.player_state["P0_VICTORY_POINTS"]
+    reward += game.state.player_state["P0_ACTUAL_VICTORY_POINTS"] - reward_function.last_points
+    reward_function.last_points = game.state.player_state["P0_ACTUAL_VICTORY_POINTS"]
 
     # Win/loss
     if not (game.winning_color() is None):
@@ -73,7 +81,7 @@ class DQN(torch.nn.Module):
 
         with torch.no_grad():
             # Transalte observation and normalise
-            observation = torch.tensor(observation / 100.0, dtype=torch.float32).unsqueeze(0).to(device)
+            observation = torch.tensor(observation, dtype=torch.float32).unsqueeze(0).to(device)
 
             # Get result of the forward
             q_values = self(observation).squeeze(0)
@@ -100,10 +108,10 @@ def optimize_model(optimizer, policy_net: DQN, target_net: DQN, memory: ReplayMe
     transitions = memory.sample(BATCH_SIZE)
     batch = Transition(*zip(*transitions))
 
-    observation_batch = torch.tensor(batch.observation, dtype=torch.float32).to(device) / 100.0
+    observation_batch = torch.tensor(batch.observation, dtype=torch.float32).to(device)
     action_batch = torch.tensor(batch.action).unsqueeze(1).to(device)
     reward_batch = torch.tensor(batch.reward, dtype=torch.float32).to(device)
-    next_observation_batch = torch.tensor(batch.next_observation, dtype=torch.float32).to(device) / 100.0
+    next_observation_batch = torch.tensor(batch.next_observation, dtype=torch.float32).to(device)
     done_batch = torch.tensor(batch.done, dtype=torch.float32).to(device)
 
     # Q(s,a)
