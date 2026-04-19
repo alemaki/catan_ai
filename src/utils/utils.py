@@ -75,17 +75,18 @@ def create_game_stats(game: Game) -> dict:
     return result
 
 def save_stats(game_stats, episode, filepath: str):
-    os.makedirs(STATS_SAVE_PATH, exist_ok=True)
+    stats_path = os.path.join(STATS_SAVE_PATH, filepath)
+    os.makedirs(os.path.dirname(stats_path), exist_ok=True)
 
     entry = {
         "episode": episode,
         "stats": game_stats,
     }
 
-    with open(os.path.join(STATS_SAVE_PATH, filepath), "a") as f:
+    with open(stats_path, "a") as f:
         f.write(json.dumps(entry) + "\n")
 
 def save_model(model, filepath: str):
-    os.makedirs(MODELS_SAVE_PATH, exist_ok=True)
     model_path = os.path.join(MODELS_SAVE_PATH, filepath)
+    os.makedirs(os.path.dirname(model_path), exist_ok=True)
     torch.save(model.state_dict(), model_path)

@@ -6,7 +6,7 @@ import os
 import json
 from catanatron import Color
 from catanatron.players.weighted_random import WeightedRandomPlayer
-from utils.constants import device, MAX_ACTIONS
+from utils.constants import device, MAX_ACITON_COUNT
 from utils.utils import create_game_stats, save_model, save_stats
 from models.dqn import reward_function, Transition, ReplayMemory, DQN, optimize_model
 
@@ -27,8 +27,8 @@ env = gymnasium.make(
 
 observation, _ = env.reset()
 
-policy_net = DQN(observation.shape[0], MAX_ACTIONS).to(device)
-target_net = DQN(observation.shape[0], MAX_ACTIONS).to(device)
+policy_net = DQN(observation.shape[0], MAX_ACITON_COUNT).to(device)
+target_net = DQN(observation.shape[0], MAX_ACITON_COUNT).to(device)
 
 target_net.load_state_dict(policy_net.state_dict())
 target_net.eval()
@@ -43,31 +43,36 @@ EPS_MIN = 0.01
 
 for episode in range(10001):
     observation, info = env.reset()
-    done = False
+    done: bool = False
+
+    prev_observation: list = observation
+    prev_info: dict = info
 
     while not done:
-        action = policy_net.select_action(observation, info["valid_actions"], epsilon)
+        action = policy_net.select_action(prev_observation, info["valid_actions"], epsilon)
 
-        next_obs, reward, terminated, truncated, next_info = env.step(action)
+        observation, reward, terminated, truncated, info = env.step(action)
         done = terminated or truncated
 
-        memory.push(Transition(observation, info["valid_actions"], action, next_obs, next_info["valid_actions"], reward, done))
+        transition: Transition = ReplayMemory.create_transition(prev_observation, prev_info["valid_actions"], action, observation, info["valid_actions"], reward, done)
+        memory.push(transition)
 
-        observation = next_obs
-        info = next_info
+        prev_observation = observation
+        prev_info = info
 
         optimize_model(optimizer, policy_net, target_net, memory)
 
+    # Epsilon update
     epsilon = max(EPS_MIN, epsilon * EPS_DECAY)
 
     # save stats for game
     game_stats: dict = create_game_stats(env.unwrapped.game)
-    save_stats(game_stats, episode, "dqn_stats.json")
+    save_stats(game_stats, episode, "dqn_stats_32_neurons_model.json")
 
     # update target network occasionally
-    if episode % 10 == 0:
+    if episode % 100 == 0:
         target_net.load_state_dict(policy_net.state_dict())
     if episode % 2000 == 0 and episode != 0:
-        save_model(target_net, f"dqn_episode_{episode}.pt")
+        save_model(target_net, f"32_neurons_model/dqn_episode_{episode}.pt")
 
 env.close()
