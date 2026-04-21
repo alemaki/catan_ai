@@ -74,14 +74,17 @@ def create_game_stats(game: Game) -> dict:
     
     return result
 
-def save_stats(game_stats, episode, filepath: str):
+def save_stats(game_stats: dict, episode: int, total_loss: float, filepath: str):
     stats_path = os.path.join(STATS_SAVE_PATH, filepath)
     os.makedirs(os.path.dirname(stats_path), exist_ok=True)
 
     entry = {
         "episode": episode,
+        "total_loss_for_game": total_loss,
         "stats": game_stats,
     }
+
+    print("Loss for entire game (mean):", total_loss / game_stats["game_turn"])
 
     with open(stats_path, "a") as f:
         f.write(json.dumps(entry) + "\n")

@@ -47,7 +47,7 @@ for episode in range(10001):
 
     prev_observation: list = observation
     prev_info: dict = info
-
+    total_loss: float = 0
     while not done:
         action = policy_net.select_action(prev_observation, info["valid_actions"], epsilon)
 
@@ -60,19 +60,19 @@ for episode in range(10001):
         prev_observation = observation
         prev_info = info
 
-        optimize_model(optimizer, policy_net, target_net, memory)
+        total_loss = total_loss + optimize_model(optimizer, policy_net, target_net, memory)
 
     # Epsilon update
     epsilon = max(EPS_MIN, epsilon * EPS_DECAY)
 
     # save stats for game
     game_stats: dict = create_game_stats(env.unwrapped.game)
-    save_stats(game_stats, episode, "dqn_stats_32_neurons_model.json")
+    save_stats(game_stats, episode, total_loss, "dqn_stats_32_neurons_model_default_reward.json")
 
     # update target network occasionally
     if episode % 100 == 0:
         target_net.load_state_dict(policy_net.state_dict())
     if episode % 2000 == 0 and episode != 0:
-        save_model(target_net, f"32_neurons_model/dqn_episode_{episode}.pt")
+        save_model(target_net, f"32_neurons_model_default_reward/dqn_episode_{episode}.pt")
 
 env.close()

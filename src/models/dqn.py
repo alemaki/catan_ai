@@ -122,9 +122,9 @@ def mask_q_values(q_values: torch.Tensor, valid_actions: list) -> torch.Tensor:
 BATCH_SIZE = 64
 GAMMA = 0.99
 
-def optimize_model(optimizer, policy_net: DQN, target_net: DQN, memory: ReplayMemory):
+def optimize_model(optimizer, policy_net: DQN, target_net: DQN, memory: ReplayMemory) -> float:
     if len(memory) < BATCH_SIZE:
-        return
+        return 0
 
     transitions = memory.sample(BATCH_SIZE)
     batch = Transition(*zip(*transitions))
@@ -148,9 +148,11 @@ def optimize_model(optimizer, policy_net: DQN, target_net: DQN, memory: ReplayMe
 
         expected_q = reward_batch + GAMMA * max_next_q * (1 - done_batch)
 
-    loss = torch.nn.functional.mse_loss(observation_action_values, expected_q)
+    loss = torch.nn.functional.smooth_l1_loss(observation_action_values, expected_q)
 
     optimizer.zero_grad()
     loss.backward()
     torch.nn.utils.clip_grad_norm_(policy_net.parameters(), 1.0)
     optimizer.step()
+
+    return loss.item()
