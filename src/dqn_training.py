@@ -21,7 +21,7 @@ env = gymnasium.make(
             WeightedRandomPlayer(Color.WHITE),
             WeightedRandomPlayer(Color.ORANGE),
         ],
-        "reward_function": reward_function,
+        #"reward_function": reward_function,
     },
 )
 
