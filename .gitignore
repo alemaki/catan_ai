@@ -1,2 +1,4 @@
 venv/*
 *__pycache__*
+
+src/catan_ai.egg_info

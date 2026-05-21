@@ -1,6 +1,6 @@
 import random
 import torch.nn
-from utils.constants import MAX_ACITON_COUNT
+from utils.constants import MAX_ACTION_COUNT
 from collections import namedtuple, deque
 from catanatron import Game, Color
 from utils.constants import device
@@ -21,13 +21,14 @@ Transition = namedtuple("Transition",
 """
 def reward_function(game: Game, p0_color: Color):
     reward = 0
-    if  reward_function.last_points == 0: # move back to 1? so we don't reward first move.
-         reward_function.last_points = 1
+    if reward_function.last_points == 0: # move back to 1? so we don't reward first move.
+        reward_function.last_points = 1
 
     # VP gain. Can happen with settlements, castles, longest roads, biggest army, or just vp gain from casino
     reward += (game.state.player_state["P0_ACTUAL_VICTORY_POINTS"] - reward_function.last_points) * 10 # increase reward
     reward_function.last_points = game.state.player_state["P0_ACTUAL_VICTORY_POINTS"]
-
+    if reward < 0:
+        reward = 0
     # Win/loss
     if not (game.winning_color() is None):
         if game.winning_color() == p0_color:
@@ -40,8 +41,8 @@ def reward_function(game: Game, p0_color: Color):
 
 reward_function.last_points = 0 # static
 
-def valid_actions_to_mask(valid_actions, action_dim = MAX_ACITON_COUNT):
-    mask = torch.full((action_dim,), -1e9, device=device)
+def valid_actions_to_mask(valid_actions, action_dim = MAX_ACTION_COUNT):
+    mask = torch.full((action_dim,), -1e9, device=device, dtype=torch.float32)
     mask[valid_actions] = 0
     return mask
 
@@ -54,14 +55,14 @@ class ReplayMemory():
 
     @staticmethod
     def create_transition(observation, valid_actions, action, next_observation, next_valid_actions, reward, done):
-        valid_actions_mask = valid_actions_to_mask(valid_actions)
+        valid_actions_mask = valid_actions_to_mask(valid_actions) # makes tesnor
         next_valid_actions_mask = valid_actions_to_mask(next_valid_actions)
         return Transition(
             torch.tensor(observation, dtype=torch.float32, device=device),
-            torch.tensor(valid_actions_mask, dtype=torch.float32, device=device),
+            valid_actions_mask,
             torch.tensor(action, dtype=torch.long, device=device),
             torch.tensor(next_observation, dtype=torch.float32, device=device),
-            torch.tensor(next_valid_actions_mask, dtype=torch.float32, device=device),
+            next_valid_actions_mask,
             torch.tensor(reward, dtype=torch.float32, device=device),
             torch.tensor(done, dtype=torch.float32, device=device),
         )
@@ -80,9 +81,9 @@ class DQN(torch.nn.Module):
 
     def __init__(self, observation_shape, actions_shape):
         super(DQN, self).__init__()
-        self.layer1 = torch.nn.Linear(observation_shape, 32)
-        self.layer2 = torch.nn.Linear(32, 32)
-        self.layer3 = torch.nn.Linear(32, actions_shape)
+        self.layer1 = torch.nn.Linear(observation_shape, 256)
+        self.layer2 = torch.nn.Linear(256, 256)
+        self.layer3 = torch.nn.Linear(256, actions_shape)
 
     """
     Called with either one element to determine next action, or a batch
@@ -109,15 +110,6 @@ class DQN(torch.nn.Module):
             q_values = q_values + mask
 
             return torch.argmax(q_values).item()
-
-"""
-
-"""
-def mask_q_values(q_values: torch.Tensor, valid_actions: list) -> torch.Tensor:
-    # Mask for unplayable actions.
-    mask = torch.full_like(q_values, -1e9)
-    mask[valid_actions] = 0
-    return q_values + mask
 
 BATCH_SIZE = 64
 GAMMA = 0.99

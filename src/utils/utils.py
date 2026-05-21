@@ -1,9 +1,10 @@
-
-import os 
+import os
 import json
 import torch
+import gymnasium
 from catanatron.features import feature_extractors
 from catanatron import Game, Color, RESOURCES
+from catanatron.players.weighted_random import WeightedRandomPlayer
 from catanatron.state import PLAYER_INITIAL_STATE
 from catanatron.models.enums import DEVELOPMENT_CARDS
 from utils.constants import STATS_SAVE_PATH, MODELS_SAVE_PATH
@@ -11,8 +12,25 @@ from utils.constants import STATS_SAVE_PATH, MODELS_SAVE_PATH
 feature_index_map_ref: dict | None = None
 game_ref: Game | None = None
 
+def create_random_players_env(reward_function = None) -> gymnasium.Env:
+    config = {
+            "enemies": [
+                WeightedRandomPlayer(Color.RED),
+                WeightedRandomPlayer(Color.WHITE),
+                WeightedRandomPlayer(Color.ORANGE),
+            ],
+        }
+    if reward_function is not None:
+        config["reward_function"] = reward_function
+
+    env = gymnasium.make(
+        "catanatron/Catanatron-v0",
+        config = config,
+    )
+    return env
+
 def get_feature_index_map(game: Game) -> dict:
-    assert (game is Game)
+    assert isinstance(game, Game)
 
     # Remember game for future ref
     if (game_ref is None) or (game_ref != game):
