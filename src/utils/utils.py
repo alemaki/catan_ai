@@ -89,7 +89,7 @@ def create_game_stats(game: Game) -> dict:
     result["mp_dev_cards_played"] = 0
     for dev_card in DEVELOPMENT_CARDS:
         result["mp_dev_cards_played"] += game.state.player_state[f"P0_PLAYED_{dev_card}"]
-    
+
     return result
 
 def save_stats(game_stats: dict, episode: int, total_loss: float, filepath: str):

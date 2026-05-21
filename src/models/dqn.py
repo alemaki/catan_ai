@@ -2,8 +2,9 @@ import random
 import torch.nn
 from utils.constants import MAX_ACTION_COUNT
 from collections import namedtuple, deque
-from catanatron import Game, Color
+from catanatron import Game, Color, RESOURCES
 from utils.constants import device
+from catanatron.state import PLAYER_INITIAL_STATE
 
 Transition = namedtuple("Transition",
                             ("observation",
@@ -21,25 +22,34 @@ Transition = namedtuple("Transition",
 """
 def reward_function(game: Game, p0_color: Color):
     reward = 0
-    if reward_function.last_points == 0: # move back to 1? so we don't reward first move.
-        reward_function.last_points = 1
+    ps = game.state.player_state
 
-    # VP gain. Can happen with settlements, castles, longest roads, biggest army, or just vp gain from casino
-    reward += (game.state.player_state["P0_ACTUAL_VICTORY_POINTS"] - reward_function.last_points) * 10 # increase reward
-    reward_function.last_points = game.state.player_state["P0_ACTUAL_VICTORY_POINTS"]
-    if reward < 0:
-        reward = 0
-    # Win/loss
-    if not (game.winning_color() is None):
-        if game.winning_color() == p0_color:
-            reward += 100
-        else:
-            reward -= 100 # slap it in the face
+    # VP gain (primary)
+    vp_gain = ps["P0_ACTUAL_VICTORY_POINTS"] - reward_function.last_points
+    reward += max(0, vp_gain) * 30
+    reward_function.last_points = ps["P0_ACTUAL_VICTORY_POINTS"]
+
+    # Resource diversity (encourages varied production) (secondary)
+    # resources = [ps[f"P0_{r}_IN_HAND"] for r in RESOURCES]
+    # diversity = sum(1 for r in resources if r > 0)
+    # reward += (diversity - reward_function.last_diversity) * 0.1
+    # reward_function.last_diversity = diversity
+
+    # BUilding progress (secondary)
+    roads_built = PLAYER_INITIAL_STATE["ROADS_AVAILABLE"] - ps["P0_ROADS_AVAILABLE"]
+    reward += roads_built * 6 - reward_function.last_roads * 6
+    reward_function.last_roads = roads_built
+
+    # Win/loss (primary)
+    if game.winning_color() is not None:
+        reward += 200 if game.winning_color() == p0_color else -200
         reward_function.last_points = 0
+        reward_function.last_roads = 0
 
     return reward
 
-reward_function.last_points = 0 # static
+reward_function.last_points = 0
+reward_function.last_roads = 0
 
 def valid_actions_to_mask(valid_actions, action_dim = MAX_ACTION_COUNT):
     mask = torch.full((action_dim,), -1e9, device=device, dtype=torch.float32)
@@ -79,20 +89,31 @@ class ReplayMemory():
 
 class DQN(torch.nn.Module):
 
+
     def __init__(self, observation_shape, actions_shape):
-        super(DQN, self).__init__()
-        self.layer1 = torch.nn.Linear(observation_shape, 256)
-        self.layer2 = torch.nn.Linear(256, 256)
-        self.layer3 = torch.nn.Linear(256, actions_shape)
+        super().__init__()
+        self.shared = torch.nn.Sequential(
+            torch.nn.Linear(observation_shape, 512),
+            torch.nn.ReLU(),
+            torch.nn.Linear(512, 512),
+            torch.nn.ReLU(),
+            torch.nn.Linear(512, 256),
+            torch.nn.ReLU(),
+        )
+        # Dueling streams
+        self.value_stream = torch.nn.Linear(256, 1)
+        self.advantage_stream = torch.nn.Linear(256, actions_shape)
 
     """
     Called with either one element to determine next action, or a batch
     during optimization. Returns tensor([[left0exp,right0exp]...]).
     """
     def forward(self, observation):
-        observation = torch.nn.functional.relu(self.layer1(observation))
-        observation = torch.nn.functional.relu(self.layer2(observation))
-        return self.layer3(observation)
+        x = self.shared(observation)
+        value = self.value_stream(x)
+        advantage = self.advantage_stream(x)
+        # Dueling: Q = V + (A - mean(A))
+        return value + advantage - advantage.mean(dim=-1, keepdim=True)
 
     def select_action(self, observation: list, valid_actions: list, epsilon: float) -> int:
         # Random choice for espilon start

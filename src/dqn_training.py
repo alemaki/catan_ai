@@ -12,7 +12,7 @@ LEARNING_RATE = 3e-4
 MEMORY = 100_000
 EPISODES = 10_000
 
-env = create_random_players_env()
+env = create_random_players_env(reward_function= reward_function)
 observation, _ = env.reset()
 
 policy_net = DQN(observation.shape[0], MAX_ACTION_COUNT).to(device)
@@ -26,16 +26,19 @@ memory = ReplayMemory(MEMORY)
 optimizer = torch.optim.AdamW(policy_net.parameters(), lr=LEARNING_RATE, amsgrad=True)
 
 epsilon: float  = 1.0
-EPS_DECAY: float = 0.996
-EPS_MIN: float = 0.01
+EPS_MIN: float = 0.001
+EPS_DECAY_STEP: float = (EPS_MIN / 1.0) ** (1 / 1_000_000) # Million steps to reach eps_min
 NORMALIZATION: bool = True
 
 policy_net.train()
 
 for episode in range(EPISODES + 1):
     observation, info = env.reset()
+    reward_function.last_points = 0 # Just in case
+    reward_function.last_roads = 0  # Just in case
     done: bool = False
-
+    if NORMALIZATION:
+        observation /= 50
     prev_observation: list = observation
     prev_info: dict = info
     total_loss: float = 0
@@ -56,17 +59,17 @@ for episode in range(EPISODES + 1):
 
         total_loss = total_loss + optimize_model(optimizer, policy_net, target_net, memory)
 
-    # Epsilon update
-    epsilon = max(EPS_MIN, epsilon * EPS_DECAY)
+        # Epsilon update
+        epsilon = max(EPS_MIN, epsilon * EPS_DECAY_STEP)
 
     # save stats for game
     game_stats: dict = create_game_stats(env.unwrapped.game)
-    save_stats(game_stats, episode, total_loss, "dqn_stats_256_neurons_model_default_reward.json")
+    save_stats(game_stats, episode, total_loss, "dqn_stats_dueling_model.json")
 
     # update target network occasionally
-    if episode % 10 == 0:
+    if episode % 5 == 0:
         target_net.load_state_dict(policy_net.state_dict())
     if episode % (EPISODES // 5) == 0 and episode != 0:
-        save_model(target_net, f"256_neurons_model_default_reward/dqn_episode_{episode}.pt")
+        save_model(target_net, f"dqn_stats_dueling_model/dqn_episode_{episode}.pt")
 
 env.close()
