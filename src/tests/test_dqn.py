@@ -54,9 +54,6 @@ class TestRewardFunction(unittest.TestCase):
         self.game.state.player_state["P1_ACTUAL_VICTORY_POINTS"] = 10
         self.assertLessEqual(reward_function(self.game, self.p0_color), -100)
 
-
-# ─── valid_actions_to_mask ────────────────────────────────────────────────────
-
 class TestValidActionsToMask(unittest.TestCase):
 
     def test_valid_actions_get_zero(self):
@@ -86,9 +83,6 @@ class TestValidActionsToMask(unittest.TestCase):
     def test_no_valid_gives_all_negative(self):
         mask = valid_actions_to_mask([])
         self.assertTrue(torch.all(mask == -1e9))
-
-
-# ─── ReplayMemory ─────────────────────────────────────────────────────────────
 
 class TestReplayMemory(unittest.TestCase):
 
@@ -158,9 +152,6 @@ class TestReplayMemory(unittest.TestCase):
         self.assertEqual(t.valid_actions_mask.shape[0], MAX_ACTION_COUNT)
         self.assertEqual(t.next_valid_actions_mask.shape[0], MAX_ACTION_COUNT)
 
-
-# ─── DQN ─────────────────────────────────────────────────────────────────────
-
 class TestDQN(unittest.TestCase):
 
     OBS_SIZE = 20
@@ -224,9 +215,6 @@ class TestDQN(unittest.TestCase):
         q = self.net(obs)
         self.assertTrue(torch.allclose(q, q[0, 0].expand_as(q), atol=1e-5))
 
-
-# ─── optimize_model ───────────────────────────────────────────────────────────
-
 class TestOptimizeModel(unittest.TestCase):
     # Use MAX_ACTION_COUNT so the mask shape matches the network output
     OBS_SIZE = 20
@@ -277,9 +265,6 @@ class TestOptimizeModel(unittest.TestCase):
         for before, after in zip(target_before, self.target_net.parameters()):
             self.assertTrue(torch.equal(before, after))
 
-
-# ─── reward_function (roads) ─────────────────────────────────────────────────
-
 class TestRewardFunctionRoads(unittest.TestCase):
 
     def setUp(self):
@@ -316,9 +301,6 @@ class TestRewardFunctionRoads(unittest.TestCase):
     def test_no_road_reward_when_roads_unchanged(self):
         reward = reward_function(self.game, self.p0_color)
         self.assertEqual(reward, 0)
-
-
-# ─── create_game_stats ────────────────────────────────────────────────────────
 
 class TestCreateGameStats(unittest.TestCase):
 
@@ -370,9 +352,6 @@ class TestCreateGameStats(unittest.TestCase):
         stats = create_game_stats(self.game)
         self.assertIsInstance(stats["mp_has_road"], bool)
         self.assertIsInstance(stats["mp_has_army"], bool)
-
-
-# ─── integration smoke test ───────────────────────────────────────────────────
 
 class TestTrainingSmoke(unittest.TestCase):
 
