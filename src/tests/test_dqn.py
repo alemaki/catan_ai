@@ -53,6 +53,20 @@ class TestRewardFunction(unittest.TestCase):
         self.game.state.player_state["P1_ACTUAL_VICTORY_POINTS"] = 10
         self.assertLessEqual(reward_function(self.game, self.agent_color), -WIN_REWARD)
 
+    def test_reset_restarts_vp_tracking_from_one(self):
+        self.game.state.player_state[f"{self.key}_ACTUAL_VICTORY_POINTS"] = 5
+        reward_function(self.game, self.agent_color)
+        reset_reward_function()
+        # last_points is back to 1; 5 VPs now yields 4 * VP_REWARD
+        reward = reward_function(self.game, self.agent_color)
+        self.assertEqual(reward, VP_REWARD * 4)
+
+    def test_win_auto_resets_internal_state(self):
+        self.game.state.player_state[f"{self.key}_ACTUAL_VICTORY_POINTS"] = 10
+        reward_function(self.game, self.agent_color)
+        self.assertEqual(reward_function.last_points, 1)
+        self.assertEqual(reward_function.last_roads, 1)
+
 class TestValidActionsToMask(unittest.TestCase):
 
     def test_valid_actions_get_zero(self):
@@ -150,6 +164,15 @@ class TestReplayMemory(unittest.TestCase):
         t = self._make_transition()
         self.assertEqual(t.valid_actions_mask.shape[0], MAX_ACTION_COUNT)
         self.assertEqual(t.next_valid_actions_mask.shape[0], MAX_ACTION_COUNT)
+
+    def test_mask_values_in_transition(self):
+        obs = [0.0] * self.OBS_SIZE
+        valid = [0, 2, 5]
+        t = ReplayMemory.create_transition(obs, valid, 0, obs, valid, 1.0, False)
+        self.assertEqual(t.valid_actions_mask[0].item(), 0.0)
+        self.assertEqual(t.valid_actions_mask[2].item(), 0.0)
+        self.assertAlmostEqual(t.valid_actions_mask[1].item(), -1e9)
+        self.assertAlmostEqual(t.valid_actions_mask[3].item(), -1e9)
 
 class TestDQN(unittest.TestCase):
 
@@ -264,6 +287,17 @@ class TestOptimizeModel(unittest.TestCase):
         for before, after in zip(target_before, self.target_net.parameters()):
             self.assertTrue(torch.equal(before, after))
 
+    def test_loss_is_non_negative(self):
+        self._fill_memory(BATCH_SIZE + 10)
+        loss = optimize_model(self.optimizer, self.policy_net, self.target_net, self.memory)
+        self.assertGreaterEqual(loss, 0.0)
+
+    def test_exactly_batch_size_samples_triggers_optimization(self):
+        self._fill_memory(BATCH_SIZE)
+        loss = optimize_model(self.optimizer, self.policy_net, self.target_net, self.memory)
+        self.assertIsInstance(loss, float)
+        self.assertGreater(loss, 0)
+
 class TestRewardFunctionRoads(unittest.TestCase):
 
     def setUp(self):
@@ -303,6 +337,15 @@ class TestRewardFunctionRoads(unittest.TestCase):
     def test_no_road_reward_when_roads_unchanged(self):
         reward = reward_function(self.game, self.agent_color)
         self.assertEqual(reward, 0)
+
+    def test_reset_clears_road_tracking(self):
+        self.game.state.player_state[f"{self.key}_ROADS_AVAILABLE"] -= 2
+        reward_function(self.game, self.agent_color)
+        # Without reset, same state gives 0 (already accounted for)
+        self.assertEqual(reward_function(self.game, self.agent_color), 0)
+        # After reset, same state gives non-zero (tracking restarted from 1)
+        reset_reward_function()
+        self.assertGreater(reward_function(self.game, self.agent_color), 0)
 
 class TestCreateGameStats(unittest.TestCase):
 
@@ -354,6 +397,31 @@ class TestCreateGameStats(unittest.TestCase):
         stats = create_game_stats(self.game)
         self.assertIsInstance(stats["mp_has_road"], bool)
         self.assertIsInstance(stats["mp_has_army"], bool)
+
+    def test_mp_roads_counts_built_roads(self):
+        key = player_key(self.game.state, self.game.state.colors[0])
+        before = create_game_stats(self.game)["mp_roads"]
+        self.game.state.player_state[f"{key}_ROADS_AVAILABLE"] -= 3
+        self.assertEqual(create_game_stats(self.game)["mp_roads"], before + 3)
+
+    def test_mp_actual_vps_reflects_player_state(self):
+        key = player_key(self.game.state, self.game.state.colors[0])
+        self.game.state.player_state[f"{key}_ACTUAL_VICTORY_POINTS"] = 7
+        self.assertEqual(create_game_stats(self.game)["mp_actual_vps"], 7)
+
+    def test_finished_and_mp_won_when_main_player_reaches_10_vps(self):
+        key = player_key(self.game.state, self.game.state.colors[0])
+        self.game.state.player_state[f"{key}_ACTUAL_VICTORY_POINTS"] = 10
+        stats = create_game_stats(self.game)
+        self.assertTrue(stats["finished"])
+        self.assertTrue(stats["mp_won"])
+
+    def test_finished_true_mp_won_false_when_enemy_wins(self):
+        enemy_key = player_key(self.game.state, self.game.state.colors[1])
+        self.game.state.player_state[f"{enemy_key}_ACTUAL_VICTORY_POINTS"] = 10
+        stats = create_game_stats(self.game)
+        self.assertTrue(stats["finished"])
+        self.assertFalse(stats["mp_won"])
 
 class TestTrainingSmoke(unittest.TestCase):
 
