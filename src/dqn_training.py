@@ -6,7 +6,7 @@ import os
 import json
 from utils.constants import device, MAX_ACTION_COUNT
 from utils.utils import create_game_stats, save_model, save_stats, create_random_players_env
-from models.dqn import reward_function, Transition, ReplayMemory, DQN, optimize_model
+from models.dqn import reward_function, reset_reward_function, Transition, ReplayMemory, DQN, optimize_model
 
 LEARNING_RATE = 3e-4
 MEMORY = 100_000
@@ -34,8 +34,7 @@ policy_net.train()
 
 for episode in range(EPISODES + 1):
     observation, info = env.reset()
-    reward_function.last_points = 0 # Just in case
-    reward_function.last_roads = 0  # Just in case
+    reset_reward_function()
     done: bool = False
     if NORMALIZATION:
         observation /= 50

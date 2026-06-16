@@ -3,8 +3,9 @@ import torch.nn
 from utils.constants import MAX_ACTION_COUNT
 from collections import namedtuple, deque
 from catanatron import Game, Color, RESOURCES
-from utils.constants import device
+from utils.constants import device, WIN_REWARD, VP_REWARD, CITY_REWARD, ROAD_REWARD
 from catanatron.state import PLAYER_INITIAL_STATE
+from catanatron.state_functions import player_key
 
 Transition = namedtuple("Transition",
                             ("observation",
@@ -20,36 +21,39 @@ Transition = namedtuple("Transition",
 """
 
 """
-def reward_function(game: Game, p0_color: Color):
+def reward_function(game: Game, agent_color: Color):
     reward = 0
     ps = game.state.player_state
+    key = player_key(game.state, agent_color)
 
     # VP gain (primary)
-    vp_gain = ps["P0_ACTUAL_VICTORY_POINTS"] - reward_function.last_points
-    reward += max(0, vp_gain) * 30
-    reward_function.last_points = ps["P0_ACTUAL_VICTORY_POINTS"]
+    vp_gain = ps[f"{key}_ACTUAL_VICTORY_POINTS"] - reward_function.last_points
+    reward += max(0, vp_gain) * VP_REWARD
+    reward_function.last_points = max(1, ps[f"{key}_ACTUAL_VICTORY_POINTS"])
 
     # Resource diversity (encourages varied production) (secondary)
-    # resources = [ps[f"P0_{r}_IN_HAND"] for r in RESOURCES]
+    # resources = [ps[f"{key}_{r}_IN_HAND"] for r in RESOURCES]
     # diversity = sum(1 for r in resources if r > 0)
     # reward += (diversity - reward_function.last_diversity) * 0.1
     # reward_function.last_diversity = diversity
 
-    # BUilding progress (secondary)
-    roads_built = PLAYER_INITIAL_STATE["ROADS_AVAILABLE"] - ps["P0_ROADS_AVAILABLE"]
-    reward += roads_built * 6 - reward_function.last_roads * 6
-    reward_function.last_roads = roads_built
+    # Building progress (secondary)
+    roads_built = PLAYER_INITIAL_STATE["ROADS_AVAILABLE"] - ps[f"{key}_ROADS_AVAILABLE"]
+    reward += max(0, (roads_built - reward_function.last_roads) * ROAD_REWARD)
+    reward_function.last_roads = max(1, roads_built)
 
     # Win/loss (primary)
     if game.winning_color() is not None:
-        reward += 200 if game.winning_color() == p0_color else -200
-        reward_function.last_points = 0
-        reward_function.last_roads = 0
+        reward += WIN_REWARD if game.winning_color() == agent_color else -WIN_REWARD
+        reset_reward_function()
 
     return reward
 
-reward_function.last_points = 0
-reward_function.last_roads = 0
+def reset_reward_function():
+    reward_function.last_points = 1
+    reward_function.last_roads = 1
+
+reset_reward_function()
 
 def valid_actions_to_mask(valid_actions, action_dim = MAX_ACTION_COUNT):
     mask = torch.full((action_dim,), -1e9, device=device, dtype=torch.float32)
@@ -127,7 +131,7 @@ class DQN(torch.nn.Module):
 
             # Get result of the forward
             q_values = self(observation).squeeze(0)
-            mask = valid_actions_to_mask(valid_actions)
+            mask = valid_actions_to_mask(valid_actions, q_values.shape[0])
             q_values = q_values + mask
 
             return torch.argmax(q_values).item()
