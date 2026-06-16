@@ -1,13 +1,12 @@
-import sys
-sys.path.append('../') # literally the most retarded language ever
 import unittest
 import torch
 import random
 import gymnasium
 import catanatron.gym
-from models.dqn import reward_function, valid_actions_to_mask, ReplayMemory, DQN, optimize_model, BATCH_SIZE
+from catanatron.state_functions import player_key
+from models.dqn import reward_function, reset_reward_function, valid_actions_to_mask, ReplayMemory, DQN, optimize_model, BATCH_SIZE
 from utils.utils import create_random_players_env, create_game_stats
-from utils.constants import MAX_ACTION_COUNT
+from utils.constants import MAX_ACTION_COUNT, VP_REWARD, CITY_REWARD, ROAD_REWARD, WIN_REWARD
 from catanatron import Color, Game
 
 
@@ -16,46 +15,43 @@ class TestRewardFunction(unittest.TestCase):
     def setUp(self):
         self.env: gymnasium.Env = create_random_players_env(reward_function)
         self.game: Game = self.env.unwrapped.game
-        self.p0_color: Color = self.game.state.colors[0]
-        reward_function.last_points = 0
+        self.agent_color: Color = self.game.state.colors[0]
+        self.key = player_key(self.game.state, self.agent_color)
 
     def test_first_call_gives_zero(self):
-        self.assertEqual(reward_function(self.game, self.p0_color), 0)
+        self.assertEqual(reward_function(self.game, self.agent_color), 0)
 
     def test_first_point_gives_no_reward(self):
-        reward_function(self.game, self.p0_color)  # initialise last_points
-        self.game.state.player_state["P0_ACTUAL_VICTORY_POINTS"] = 1
-        self.assertEqual(reward_function(self.game, self.p0_color), 0)
+        reward_function(self.game, self.agent_color)  # initialise last_points
+        self.game.state.player_state[f"{self.key}_ACTUAL_VICTORY_POINTS"] = 1
+        self.assertEqual(reward_function(self.game, self.agent_color), 0)
 
-    def test_single_point_gain_rewards_10(self):
-        self.game.state.player_state["P0_ACTUAL_VICTORY_POINTS"] = 1
-        reward_function(self.game, self.p0_color)
-        self.game.state.player_state["P0_ACTUAL_VICTORY_POINTS"] = 2
-        self.assertEqual(reward_function(self.game, self.p0_color), 10)
+    def test_single_point_gain_rewards_VP_REWARD(self):
+        self.game.state.player_state[f"{self.key}_ACTUAL_VICTORY_POINTS"] = 1
+        reward_function(self.game, self.agent_color)
+        self.game.state.player_state[f"{self.key}_ACTUAL_VICTORY_POINTS"] = 2
+        self.assertEqual(reward_function(self.game, self.agent_color), VP_REWARD)
 
     def test_multi_point_gain_scales_reward(self):
-        self.game.state.player_state["P0_ACTUAL_VICTORY_POINTS"] = 1
-        reward_function(self.game, self.p0_color)
-        self.game.state.player_state["P0_ACTUAL_VICTORY_POINTS"] = 4
-        self.assertEqual(reward_function(self.game, self.p0_color), 30)
+        self.game.state.player_state[f"{self.key}_ACTUAL_VICTORY_POINTS"] = 1
+        reward_function(self.game, self.agent_color)
+        self.game.state.player_state[f"{self.key}_ACTUAL_VICTORY_POINTS"] = 4
+        self.assertEqual(reward_function(self.game, self.agent_color), VP_REWARD*3)
 
     def test_no_negative_reward_for_vp_loss(self):
-        """Reward should be floored at 0, never punish VP loss (e.g. longest road stolen)."""
-        self.game.state.player_state["P0_ACTUAL_VICTORY_POINTS"] = 5
-        reward_function(self.game, self.p0_color)
-        self.game.state.player_state["P0_ACTUAL_VICTORY_POINTS"] = 3
-        self.assertGreaterEqual(reward_function(self.game, self.p0_color), 0)
+        """Reward should be floored at 0, will not punish VP loss (e.g. longest road stolen)."""
+        self.game.state.player_state[f"{self.key}_ACTUAL_VICTORY_POINTS"] = 5
+        reward_function(self.game, self.agent_color)
+        self.game.state.player_state[f"{self.key}_ACTUAL_VICTORY_POINTS"] = 3
+        self.assertGreaterEqual(reward_function(self.game, self.agent_color), 0)
 
     def test_reward_for_won_game(self):
-        self.game.state.player_state["P0_ACTUAL_VICTORY_POINTS"] = 10
-        self.assertGreaterEqual(reward_function(self.game, self.p0_color), 100)
+        self.game.state.player_state[f"{self.key}_ACTUAL_VICTORY_POINTS"] = 10
+        self.assertGreaterEqual(reward_function(self.game, self.agent_color), WIN_REWARD)
 
     def test_reward_for_lost_game(self):
         self.game.state.player_state["P1_ACTUAL_VICTORY_POINTS"] = 10
-        self.assertLessEqual(reward_function(self.game, self.p0_color), -100)
-
-
-# ─── valid_actions_to_mask ────────────────────────────────────────────────────
+        self.assertLessEqual(reward_function(self.game, self.agent_color), -WIN_REWARD)
 
 class TestValidActionsToMask(unittest.TestCase):
 
@@ -86,9 +82,6 @@ class TestValidActionsToMask(unittest.TestCase):
     def test_no_valid_gives_all_negative(self):
         mask = valid_actions_to_mask([])
         self.assertTrue(torch.all(mask == -1e9))
-
-
-# ─── ReplayMemory ─────────────────────────────────────────────────────────────
 
 class TestReplayMemory(unittest.TestCase):
 
@@ -158,36 +151,33 @@ class TestReplayMemory(unittest.TestCase):
         self.assertEqual(t.valid_actions_mask.shape[0], MAX_ACTION_COUNT)
         self.assertEqual(t.next_valid_actions_mask.shape[0], MAX_ACTION_COUNT)
 
-
-# ─── DQN ─────────────────────────────────────────────────────────────────────
-
 class TestDQN(unittest.TestCase):
 
-    OBS_SIZE = 20
+    OBSERVATION_SIZE = 20
     ACTION_SIZE = 10
 
     def setUp(self):
-        self.net = DQN(self.OBS_SIZE, self.ACTION_SIZE)
+        self.net = DQN(self.OBSERVATION_SIZE, self.ACTION_SIZE)
 
     def test_forward_single_output_shape(self):
-        obs = torch.zeros(1, self.OBS_SIZE)
+        obs = torch.zeros(1, self.OBSERVATION_SIZE)
         out = self.net(obs)
         self.assertEqual(out.shape, (1, self.ACTION_SIZE))
 
     def test_forward_batch_output_shape(self):
-        obs = torch.zeros(32, self.OBS_SIZE)
+        obs = torch.zeros(32, self.OBSERVATION_SIZE)
         out = self.net(obs)
         self.assertEqual(out.shape, (32, self.ACTION_SIZE))
 
     def test_select_action_greedy_returns_valid(self):
         valid = [2, 5, 7]
-        obs = [0.0] * self.OBS_SIZE
+        obs = [0.0] * self.OBSERVATION_SIZE
         action = self.net.select_action(obs, valid, epsilon=0.0)
         self.assertIn(action, valid)
 
     def test_select_action_random_returns_valid(self):
         valid = [1, 3, 9]
-        obs = [0.0] * self.OBS_SIZE
+        obs = [0.0] * self.OBSERVATION_SIZE
         for _ in range(30):
             action = self.net.select_action(obs, valid, epsilon=1.0)
             self.assertIn(action, valid)
@@ -198,18 +188,18 @@ class TestDQN(unittest.TestCase):
             self.net.advantage_stream.weight.zero_()
             self.net.advantage_stream.bias.zero_()
             self.net.advantage_stream.bias[1] = 1000.0
-        obs = [0.0] * self.OBS_SIZE
+        obs = [0.0] * self.OBSERVATION_SIZE
         action = self.net.select_action(obs, valid_actions=[0], epsilon=0.0)
         self.assertEqual(action, 0)
 
     def test_select_action_single_valid_always_returned(self):
-        obs = [0.0] * self.OBS_SIZE
+        obs = [0.0] * self.OBSERVATION_SIZE
         for epsilon in [0.0, 0.5, 1.0]:
             action = self.net.select_action(obs, [4], epsilon=epsilon)
             self.assertEqual(action, 4)
 
     def test_select_action_greedy_is_deterministic(self):
-        obs = [0.5] * self.OBS_SIZE
+        obs = [0.5] * self.OBSERVATION_SIZE
         valid = [0, 1, 2, 3]
         first = self.net.select_action(obs, valid, epsilon=0.0)
         for _ in range(10):
@@ -220,12 +210,9 @@ class TestDQN(unittest.TestCase):
         with torch.no_grad():
             self.net.advantage_stream.weight.zero_()
             self.net.advantage_stream.bias.zero_()
-        obs = torch.zeros(1, self.OBS_SIZE)
+        obs = torch.zeros(1, self.OBSERVATION_SIZE)
         q = self.net(obs)
         self.assertTrue(torch.allclose(q, q[0, 0].expand_as(q), atol=1e-5))
-
-
-# ─── optimize_model ───────────────────────────────────────────────────────────
 
 class TestOptimizeModel(unittest.TestCase):
     # Use MAX_ACTION_COUNT so the mask shape matches the network output
@@ -277,48 +264,45 @@ class TestOptimizeModel(unittest.TestCase):
         for before, after in zip(target_before, self.target_net.parameters()):
             self.assertTrue(torch.equal(before, after))
 
-
-# ─── reward_function (roads) ─────────────────────────────────────────────────
-
 class TestRewardFunctionRoads(unittest.TestCase):
 
     def setUp(self):
-        self.env = create_random_players_env(reward_function)
-        self.env.reset()
-        self.game = self.env.unwrapped.game
-        self.p0_color = self.game.state.colors[0]
-        reward_function.last_points = 0
-        reward_function.last_roads = 0
-        reward_function(self.game, self.p0_color)  # sync last_points / last_roads to current state
+        self.env: gymnasium.Env = create_random_players_env(reward_function)
+        self.game: Game = self.env.unwrapped.game
+        self.agent_color: Color = Color.BLUE
+        self.key = player_key(self.game.state, self.agent_color)
+        reset_reward_function()
+
+    def test_first_road_gives_no_reward(self):
+        self.game.state.player_state[f"{self.key}_ROADS_AVAILABLE"] -= 1
+        reward = reward_function(self.game, self.agent_color)
+        self.assertEqual(reward, 0)
 
     def test_road_built_gives_reward(self):
-        self.game.state.player_state["P0_ROADS_AVAILABLE"] -= 1
-        reward = reward_function(self.game, self.p0_color)
-        self.assertEqual(reward, 6)
+        self.game.state.player_state[f"{self.key}_ROADS_AVAILABLE"] -= 2
+        reward = reward_function(self.game, self.agent_color)
+        self.assertEqual(reward, ROAD_REWARD)
 
     def test_road_reward_not_given_twice(self):
-        self.game.state.player_state["P0_ROADS_AVAILABLE"] -= 1
-        reward_function(self.game, self.p0_color)
-        second_reward = reward_function(self.game, self.p0_color)
+        self.game.state.player_state[f"{self.key}_ROADS_AVAILABLE"] -= 2
+        reward_function(self.game, self.agent_color)
+        second_reward = reward_function(self.game, self.agent_color)
         self.assertEqual(second_reward, 0)
 
     def test_two_roads_give_double_reward(self):
-        self.game.state.player_state["P0_ROADS_AVAILABLE"] -= 2
-        reward = reward_function(self.game, self.p0_color)
-        self.assertEqual(reward, 12)
+        self.game.state.player_state[f"{self.key}_ROADS_AVAILABLE"] -= 3
+        reward = reward_function(self.game, self.agent_color)
+        self.assertEqual(reward, ROAD_REWARD * 2)
 
     def test_vp_and_road_rewards_combine(self):
-        self.game.state.player_state["P0_ROADS_AVAILABLE"] -= 1
-        self.game.state.player_state["P0_ACTUAL_VICTORY_POINTS"] += 1
-        reward = reward_function(self.game, self.p0_color)
-        self.assertEqual(reward, 6 + 30)
+        self.game.state.player_state[f"{self.key}_ROADS_AVAILABLE"] -= 2
+        self.game.state.player_state[f"{self.key}_ACTUAL_VICTORY_POINTS"] += 2
+        reward = reward_function(self.game, self.agent_color)
+        self.assertEqual(reward, ROAD_REWARD + VP_REWARD)
 
     def test_no_road_reward_when_roads_unchanged(self):
-        reward = reward_function(self.game, self.p0_color)
+        reward = reward_function(self.game, self.agent_color)
         self.assertEqual(reward, 0)
-
-
-# ─── create_game_stats ────────────────────────────────────────────────────────
 
 class TestCreateGameStats(unittest.TestCase):
 
@@ -370,9 +354,6 @@ class TestCreateGameStats(unittest.TestCase):
         stats = create_game_stats(self.game)
         self.assertIsInstance(stats["mp_has_road"], bool)
         self.assertIsInstance(stats["mp_has_army"], bool)
-
-
-# ─── integration smoke test ───────────────────────────────────────────────────
 
 class TestTrainingSmoke(unittest.TestCase):
 
