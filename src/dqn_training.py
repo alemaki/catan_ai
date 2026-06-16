@@ -28,7 +28,7 @@ optimizer = torch.optim.AdamW(policy_net.parameters(), lr=LEARNING_RATE, amsgrad
 epsilon: float  = 1.0
 EPS_MIN: float = 0.001
 EPS_DECAY_STEP: float = (EPS_MIN / 1.0) ** (1 / 1_000_000) # Million steps to reach eps_min
-NORMALIZATION: bool = True
+NORMALIZATION: bool = False
 
 policy_net.train()
 

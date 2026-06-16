@@ -371,15 +371,14 @@ class TestTrainingSmoke(unittest.TestCase):
 
         for _ in range(3):
             obs, info = env.reset()
-            obs = obs / 50
-            reward_function.last_points = 0
-            reward_function.last_roads = 0
+            obs = obs
+            reset_reward_function()
             prev_obs, prev_info = obs, info
             done = False
             while not done:
                 action = policy_net.select_action(prev_obs, info["valid_actions"], epsilon=1.0)
                 obs, reward, terminated, truncated, info = env.step(action)
-                obs = obs / 50
+                obs = obs
                 done = terminated or truncated
                 t = ReplayMemory.create_transition(
                     prev_obs, prev_info["valid_actions"],
