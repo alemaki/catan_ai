@@ -449,10 +449,13 @@ class TestTrainingSmoke(unittest.TestCase):
                 obs = obs
                 done = terminated or truncated
                 t = ReplayMemory.create_transition(
-                    prev_obs, prev_info["valid_actions"],
+                    prev_obs,
+                    prev_info["valid_actions"],
                     action,
-                    obs, info["valid_actions"],
-                    reward, done
+                    obs,
+                    info["valid_actions"],
+                    reward,
+                    done
                 )
                 memory.push(t)
                 prev_obs, prev_info = obs, info

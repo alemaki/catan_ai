@@ -43,14 +43,22 @@ for episode in range(EPISODES + 1):
     total_loss: float = 0
     while not done:
         with torch.no_grad():
-            action = policy_net.select_action(prev_observation, info["valid_actions"], epsilon)
+            action = policy_net.select_action(prev_observation, info["valid_actions"], epsilon, device = device)
 
         observation, reward, terminated, truncated, info = env.step(action)
         if NORMALIZATION:
             observation /= 50
         done = terminated or truncated
 
-        transition: Transition = ReplayMemory.create_transition(prev_observation, prev_info["valid_actions"], action, observation, info["valid_actions"], reward, done)
+        transition: Transition = ReplayMemory.create_transition(
+            prev_observation,
+            prev_info["valid_actions"],
+            action,
+            observation,
+            info["valid_actions"],
+            reward,
+            done,
+            device = device)
         memory.push(transition)
 
         prev_observation = observation

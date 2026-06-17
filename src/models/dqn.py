@@ -3,7 +3,7 @@ import torch.nn
 from utils.constants import MAX_ACTION_COUNT
 from collections import namedtuple, deque
 from catanatron import Game, Color, RESOURCES
-from utils.constants import device, WIN_REWARD, VP_REWARD, CITY_REWARD, ROAD_REWARD
+from utils.constants import WIN_REWARD, VP_REWARD, CITY_REWARD, ROAD_REWARD
 from catanatron.state import PLAYER_INITIAL_STATE
 from catanatron.state_functions import player_key
 
@@ -55,7 +55,7 @@ def reset_reward_function():
 
 reset_reward_function()
 
-def valid_actions_to_mask(valid_actions, action_dim = MAX_ACTION_COUNT):
+def valid_actions_to_mask(valid_actions, action_dim = MAX_ACTION_COUNT, device = "cpu"):
     mask = torch.full((action_dim,), -1e9, device=device, dtype=torch.float32)
     mask[valid_actions] = 0
     return mask
@@ -68,9 +68,9 @@ class ReplayMemory():
         self.memory = deque([], maxlen = capacity)
 
     @staticmethod
-    def create_transition(observation, valid_actions, action, next_observation, next_valid_actions, reward, done):
-        valid_actions_mask = valid_actions_to_mask(valid_actions) # makes tesnor
-        next_valid_actions_mask = valid_actions_to_mask(next_valid_actions)
+    def create_transition(observation, valid_actions, action, next_observation, next_valid_actions, reward, done, device = "cpu"):
+        valid_actions_mask = valid_actions_to_mask(valid_actions, device = device) # makes tesnor
+        next_valid_actions_mask = valid_actions_to_mask(next_valid_actions, device = device)
         return Transition(
             torch.tensor(observation, dtype=torch.float32, device=device),
             valid_actions_mask,
@@ -119,7 +119,7 @@ class DQN(torch.nn.Module):
         # Dueling: Q = V + (A - mean(A))
         return value + advantage - advantage.mean(dim=-1, keepdim=True)
 
-    def select_action(self, observation: list, valid_actions: list, epsilon: float) -> int:
+    def select_action(self, observation: list, valid_actions: list, epsilon: float, device = "cpu") -> int:
         # Random choice for espilon start
         if random.random() < epsilon:
             return random.choice(valid_actions)
@@ -131,7 +131,7 @@ class DQN(torch.nn.Module):
 
             # Get result of the forward
             q_values = self(observation).squeeze(0)
-            mask = valid_actions_to_mask(valid_actions, q_values.shape[0])
+            mask = valid_actions_to_mask(valid_actions, q_values.shape[0], device = device)
             q_values = q_values + mask
 
             return torch.argmax(q_values).item()
