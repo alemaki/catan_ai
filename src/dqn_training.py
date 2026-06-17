@@ -44,6 +44,9 @@ for episode in range(EPISODES + 1):
     prev_observation: list = observation
     prev_info: dict = info
     total_loss: float = 0
+    total_reward: float = 0
+    total_mean_max_q: float = 0
+    n_opt_steps: int = 0
     while not done:
         with torch.no_grad():
             action = policy_net.select_action(prev_observation, info["valid_actions"], epsilon, device = device)
@@ -52,6 +55,7 @@ for episode in range(EPISODES + 1):
         if NORMALIZATION:
             observation /= 50
         done = terminated or truncated
+        total_reward += reward
 
         n_step_buffer.append(
             prev_observation,
@@ -69,7 +73,11 @@ for episode in range(EPISODES + 1):
         prev_observation = observation
         prev_info = info
 
-        total_loss = total_loss + optimize_model(optimizer, policy_net, target_net, memory, n=N_STEPS)
+        loss, mean_max_q = optimize_model(optimizer, policy_net, target_net, memory, n=N_STEPS)
+        total_loss += loss
+        if loss > 0:
+            total_mean_max_q += mean_max_q
+            n_opt_steps += 1
 
         # Epsilon update
         epsilon = max(EPS_MIN, epsilon * EPS_DECAY_STEP)
@@ -79,8 +87,10 @@ for episode in range(EPISODES + 1):
         memory.push(t)
 
     # save stats for game
+    ep_mean_max_q = total_mean_max_q / max(n_opt_steps, 1)
     game_stats: dict = create_game_stats(env.unwrapped.game)
-    save_stats(game_stats, episode, total_loss, "dqn_stats_dueling_model_10_step.json")
+    save_stats(game_stats, episode, total_loss, "dqn_stats_dueling_model_10_step.json",
+               epsilon=epsilon, total_reward=total_reward, mean_max_q=ep_mean_max_q)
 
     # update target network occasionally
     if episode % 5 == 0:

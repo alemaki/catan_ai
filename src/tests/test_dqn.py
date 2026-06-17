@@ -261,14 +261,20 @@ class TestOptimizeModel(unittest.TestCase):
             self.memory.push(t)
 
     def test_returns_zero_when_memory_too_small(self):
-        loss = optimize_model(self.optimizer, self.policy_net, self.target_net, self.memory)
+        loss, mean_max_q = optimize_model(self.optimizer, self.policy_net, self.target_net, self.memory)
         self.assertEqual(loss, 0)
+        self.assertEqual(mean_max_q, 0.0)
 
     def test_returns_float_loss_with_enough_samples(self):
         self._fill_memory(BATCH_SIZE + 10)
-        loss = optimize_model(self.optimizer, self.policy_net, self.target_net, self.memory)
+        loss, _ = optimize_model(self.optimizer, self.policy_net, self.target_net, self.memory)
         self.assertIsInstance(loss, float)
         self.assertGreater(loss, 0)
+
+    def test_returns_float_mean_max_q_with_enough_samples(self):
+        self._fill_memory(BATCH_SIZE + 10)
+        _, mean_max_q = optimize_model(self.optimizer, self.policy_net, self.target_net, self.memory)
+        self.assertIsInstance(mean_max_q, float)
 
     def test_policy_parameters_change_after_step(self):
         self._fill_memory(BATCH_SIZE + 10)
@@ -289,12 +295,12 @@ class TestOptimizeModel(unittest.TestCase):
 
     def test_loss_is_non_negative(self):
         self._fill_memory(BATCH_SIZE + 10)
-        loss = optimize_model(self.optimizer, self.policy_net, self.target_net, self.memory)
+        loss, _ = optimize_model(self.optimizer, self.policy_net, self.target_net, self.memory)
         self.assertGreaterEqual(loss, 0.0)
 
     def test_exactly_batch_size_samples_triggers_optimization(self):
         self._fill_memory(BATCH_SIZE)
-        loss = optimize_model(self.optimizer, self.policy_net, self.target_net, self.memory)
+        loss, _ = optimize_model(self.optimizer, self.policy_net, self.target_net, self.memory)
         self.assertIsInstance(loss, float)
         self.assertGreater(loss, 0)
 

@@ -6,10 +6,10 @@ from collections import namedtuple
 MAX_ACTION = 327
 MAX_ACTION_COUNT = 328
 
-WIN_REWARD = 200
-VP_REWARD = 30
-CITY_REWARD = 10
-ROAD_REWARD = 6
+WIN_REWARD = 20
+VP_REWARD = 3
+CITY_REWARD = 1
+ROAD_REWARD = 0.6
 
 MODELS_SAVE_PATH = "./models/saved/"
 STATS_SAVE_PATH = "./models/stats/"

@@ -95,13 +95,17 @@ def create_game_stats(game: Game) -> dict:
 
     return result
 
-def save_stats(game_stats: dict, episode: int, total_loss: float, filepath: str):
+def save_stats(game_stats: dict, episode: int, total_loss: float, filepath: str,
+               epsilon: float = 0.0, total_reward: float = 0.0, mean_max_q: float = 0.0):
     stats_path = os.path.join(STATS_SAVE_PATH, filepath)
     os.makedirs(os.path.dirname(stats_path), exist_ok=True)
 
     entry = {
         "episode": episode,
+        "epsilon": epsilon,
         "total_loss_for_game": total_loss,
+        "total_reward": total_reward,
+        "mean_max_q": mean_max_q,
         "stats": game_stats,
     }
 
