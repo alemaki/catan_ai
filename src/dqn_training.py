@@ -11,9 +11,9 @@ from models.dqn import reward_function, reset_reward_function, Transition, Repla
 LEARNING_RATE = 3e-4
 MEMORY = 100_000
 EPISODES = 10_000
-N_STEPS = 10
+N_STEPS = 1
 
-env = create_random_players_env(reward_function= reward_function)
+env = create_random_players_env(reward_function=reward_function, num_enemies=1)
 observation, _ = env.reset()
 
 policy_net = DQN(observation.shape[0], MAX_ACTION_COUNT).to(device)
@@ -89,13 +89,13 @@ for episode in range(EPISODES + 1):
     # save stats for game
     ep_mean_max_q = total_mean_max_q / max(n_opt_steps, 1)
     game_stats: dict = create_game_stats(env.unwrapped.game)
-    save_stats(game_stats, episode, total_loss, "dqn_stats_dueling_model_10_step.json",
+    save_stats(game_stats, episode, total_loss, "dqn_stats_dueling_1v1.json",
                epsilon=epsilon, total_reward=total_reward, mean_max_q=ep_mean_max_q)
 
     # update target network occasionally
     if episode % 5 == 0:
         target_net.load_state_dict(policy_net.state_dict())
     if episode % (EPISODES // 5) == 0 and episode != 0:
-        save_model(target_net, f"dqn_stats_dueling_model_10_step/dqn_episode_{episode}.pt")
+        save_model(target_net, f"dqn_stats_dueling_1v1/dqn_episode_{episode}.pt")
 
 env.close()

@@ -13,20 +13,16 @@ from utils.constants import STATS_SAVE_PATH, MODELS_SAVE_PATH
 feature_index_map_ref: dict | None = None
 game_ref: Game | None = None
 
-def create_random_players_env(reward_function = None) -> gymnasium.Env:
-    config = {
-            "enemies": [
-                WeightedRandomPlayer(Color.RED),
-                WeightedRandomPlayer(Color.WHITE),
-                WeightedRandomPlayer(Color.ORANGE),
-            ],
-        }
+def create_random_players_env(reward_function=None, num_enemies: int = 3) -> gymnasium.Env:
+    colors = [Color.RED, Color.WHITE, Color.ORANGE]
+    enemies = [WeightedRandomPlayer(c) for c in colors[:num_enemies]]
+    config = {"enemies": enemies}
     if reward_function is not None:
         config["reward_function"] = reward_function
 
     env = gymnasium.make(
         "catanatron/Catanatron-v0",
-        config = config,
+        config=config,
     )
     return env
 
