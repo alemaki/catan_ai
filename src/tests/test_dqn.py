@@ -4,7 +4,7 @@ import random
 import gymnasium
 import catanatron.gym
 from catanatron.state_functions import player_key
-from models.dqn import reward_function, reset_reward_function, valid_actions_to_mask, ReplayMemory, DQN, optimize_model, BATCH_SIZE
+from models.dqn import reward_function, reset_reward_function, valid_actions_to_mask, ReplayMemory, NStepBuffer, Transition, DQN, optimize_model, BATCH_SIZE
 from utils.utils import create_random_players_env, create_game_stats
 from utils.constants import MAX_ACTION_COUNT, VP_REWARD, CITY_REWARD, ROAD_REWARD, WIN_REWARD
 from catanatron import Color, Game
@@ -462,6 +462,143 @@ class TestTrainingSmoke(unittest.TestCase):
                 optimize_model(optimizer, policy_net, target_net, memory)
 
         env.close()
+
+
+class TestNStepBuffer(unittest.TestCase):
+    N = 3
+    GAMMA = 0.9
+    OBS_SIZE = 4
+
+    def setUp(self):
+        self.buf = NStepBuffer(n=self.N, gamma=self.GAMMA)
+
+    def _step(self, reward=0.0, done=False, obs_id=0):
+        obs = [float(obs_id)] * self.OBS_SIZE
+        next_obs = [float(obs_id + 1)] * self.OBS_SIZE
+        return (obs, [0, 1], 0, reward, next_obs, [0, 1], done)
+
+    def _fill(self, n=None):
+        count = n if n is not None else self.N
+        for i in range(count):
+            self.buf.append(*self._step(reward=1.0, obs_id=i))
+
+    def test_not_ready_when_empty(self):
+        self.assertFalse(self.buf.ready())
+
+    def test_not_ready_below_n(self):
+        self._fill(self.N - 1)
+        self.assertFalse(self.buf.ready())
+
+    def test_ready_at_n(self):
+        self._fill()
+        self.assertTrue(self.buf.ready())
+
+    def test_ready_above_n(self):
+        self._fill()
+        self.buf.append(*self._step())
+        self.assertTrue(self.buf.ready())
+
+    def test_pop_returns_transition(self):
+        self._fill()
+        self.assertIsInstance(self.buf.pop(), Transition)
+
+    def test_pop_decrements_buffer(self):
+        self._fill()
+        self.buf.pop()
+        self.assertEqual(len(self.buf.buffer), self.N - 1)
+
+    def test_pop_accumulated_return(self):
+        for r in [1.0, 2.0, 3.0]:
+            self.buf.append(*self._step(reward=r))
+        expected_R = 1.0 + 0.9 * 2.0 + 0.9**2 * 3.0
+        self.assertAlmostEqual(self.buf.pop().reward.item(), expected_R, places=5)
+
+    def test_pop_uses_first_obs(self):
+        self._fill()
+        self.assertAlmostEqual(self.buf.pop().observation[0].item(), 0.0)
+
+    def test_pop_uses_last_next_obs(self):
+        self._fill()
+        self.assertAlmostEqual(self.buf.pop().next_observation[0].item(), float(self.N))
+
+    def test_pop_done_false_for_non_terminal(self):
+        self._fill()
+        self.assertEqual(self.buf.pop().done.item(), 0.0)
+
+    def test_done_cuts_return_at_terminal(self):
+        self.buf.append(*self._step(reward=1.0, done=False))
+        self.buf.append(*self._step(reward=10.0, done=True))
+        self.buf.append(*self._step(reward=99.0, done=False))
+        expected_R = 1.0 + 0.9 * 10.0
+        self.assertAlmostEqual(self.buf.pop().reward.item(), expected_R, places=5)
+
+    def test_done_sets_done_true_in_transition(self):
+        self.buf.append(*self._step(done=False))
+        self.buf.append(*self._step(done=True))
+        self.buf.append(*self._step(done=False))
+        self.assertEqual(self.buf.pop().done.item(), 1.0)
+
+    def test_done_uses_terminal_as_next_obs(self):
+        self.buf.append(*self._step(obs_id=0, done=False))
+        self.buf.append(*self._step(obs_id=1, done=True))
+        self.buf.append(*self._step(obs_id=2, done=False))
+        self.assertAlmostEqual(self.buf.pop().next_observation[0].item(), 2.0)
+
+    def test_flush_empty_returns_empty(self):
+        self.assertEqual(self.buf.flush(), [])
+
+    def test_flush_returns_all_remaining(self):
+        self._fill(2)
+        self.assertEqual(len(self.buf.flush()), 2)
+
+    def test_flush_clears_buffer(self):
+        self._fill(2)
+        self.buf.flush()
+        self.assertFalse(self.buf.ready())
+        self.assertEqual(len(self.buf.buffer), 0)
+
+    def test_flush_each_return_accumulated_from_position(self):
+        self.buf.append(*self._step(reward=1.0, done=False))
+        self.buf.append(*self._step(reward=2.0, done=False))
+        self.buf.append(*self._step(reward=3.0, done=True))
+        ts = self.buf.flush()
+        self.assertEqual(len(ts), 3)
+        self.assertAlmostEqual(ts[0].reward.item(), 1.0 + 0.9*2.0 + 0.9**2*3.0, places=5)
+        self.assertAlmostEqual(ts[1].reward.item(), 2.0 + 0.9*3.0, places=5)
+        self.assertAlmostEqual(ts[2].reward.item(), 3.0, places=5)
+
+    def test_flush_win_reward_included_in_all_transitions(self):
+        # win reward at terminal must propagate into preceding transitions
+        self.buf.append(*self._step(reward=0.0, done=False))
+        self.buf.append(*self._step(reward=200.0, done=True))
+        ts = self.buf.flush()
+        self.assertAlmostEqual(ts[0].reward.item(), 0.9 * 200.0, places=4)
+        self.assertAlmostEqual(ts[1].reward.item(), 200.0, places=4)
+
+    def test_flush_all_done_true_when_terminal_in_window(self):
+        self.buf.append(*self._step(done=False))
+        self.buf.append(*self._step(done=True))
+        ts = self.buf.flush()
+        for t in ts:
+            self.assertEqual(t.done.item(), 1.0)
+
+    def test_clear_empties_buffer(self):
+        self._fill()
+        self.buf.clear()
+        self.assertFalse(self.buf.ready())
+        self.assertEqual(len(self.buf.buffer), 0)
+
+    def test_n_equals_one_acts_as_single_step(self):
+        buf = NStepBuffer(n=1, gamma=self.GAMMA)
+        buf.append(*self._step(reward=5.0, done=False))
+        self.assertTrue(buf.ready())
+        self.assertAlmostEqual(buf.pop().reward.item(), 5.0, places=5)
+
+    def test_single_step_flush(self):
+        self.buf.append(*self._step(reward=7.0, done=True))
+        ts = self.buf.flush()
+        self.assertEqual(len(ts), 1)
+        self.assertAlmostEqual(ts[0].reward.item(), 7.0, places=5)
 
 
 if __name__ == "__main__":

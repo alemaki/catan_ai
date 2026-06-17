@@ -91,6 +91,50 @@ class ReplayMemory():
         return len(self.memory)
 
 
+class NStepBuffer:
+    def __init__(self, n: int, gamma: float):
+        self.n = n
+        self.gamma = gamma
+        self.buffer = deque()
+
+    def append(self, obs, valid_actions, action, reward, next_obs, next_valid_actions, done):
+        self.buffer.append((obs, valid_actions, action, reward, next_obs, next_valid_actions, done))
+
+    def ready(self) -> bool:
+        return len(self.buffer) >= self.n
+
+    def _build_transition(self, device):
+        R = 0.0
+        end_idx = len(self.buffer) - 1
+        for i, (_, _, _, r, _, _, done) in enumerate(self.buffer):
+            R += (self.gamma ** i) * r
+            if done:
+                end_idx = i
+                break
+
+        obs, valid, action, _, _, _, _ = self.buffer[0]
+        _, _, _, _, next_obs, next_valid, done = self.buffer[end_idx]
+
+        return ReplayMemory.create_transition(
+            obs, valid, action, next_obs, next_valid, R, done, device=device
+        )
+
+    def pop(self, device="cpu") -> Transition:
+        t = self._build_transition(device)
+        self.buffer.popleft()
+        return t
+
+    def flush(self, device="cpu") -> list:
+        transitions = []
+        while self.buffer:
+            transitions.append(self._build_transition(device))
+            self.buffer.popleft()
+        return transitions
+
+    def clear(self):
+        self.buffer.clear()
+
+
 class DQN(torch.nn.Module):
 
 
@@ -139,7 +183,7 @@ class DQN(torch.nn.Module):
 BATCH_SIZE = 64
 GAMMA = 0.99
 
-def optimize_model(optimizer, policy_net: DQN, target_net: DQN, memory: ReplayMemory) -> float:
+def optimize_model(optimizer, policy_net: DQN, target_net: DQN, memory: ReplayMemory, n: int = 1) -> float:
     if len(memory) < BATCH_SIZE:
         return 0
 
@@ -163,13 +207,13 @@ def optimize_model(optimizer, policy_net: DQN, target_net: DQN, memory: ReplayMe
         masked_next_q = next_q + next_mask_batch
         max_next_q = masked_next_q.max(dim=1).values
 
-        expected_q = reward_batch + GAMMA * max_next_q * (1 - done_batch)
+        expected_q = reward_batch + (GAMMA ** n) * max_next_q * (1 - done_batch)
 
     loss = torch.nn.functional.smooth_l1_loss(observation_action_values, expected_q)
 
     optimizer.zero_grad()
     loss.backward()
-    torch.nn.utils.clip_grad_norm_(policy_net.parameters(), 1.0)
+    #torch.nn.utils.clip_grad_norm_(policy_net.parameters(), 1.0)
     optimizer.step()
 
     return loss.item()
