@@ -4,7 +4,7 @@ import random
 import gymnasium
 import catanatron.gym
 from catanatron.state_functions import player_key
-from models.dqn import reward_function, reset_reward_function, valid_actions_to_mask, ReplayMemory, NStepBuffer, Transition, DQN, optimize_model, BATCH_SIZE
+from models.dqn import reward_function, reset_reward_function, valid_actions_to_mask, ReplayMemory, NStepBuffer, DQNTransition, DQN, optimize_model, BATCH_SIZE
 from utils.utils import create_random_players_env, create_game_stats
 from utils.constants import MAX_ACTION_COUNT, VP_REWARD, CITY_REWARD, ROAD_REWARD, WIN_REWARD
 from catanatron import Color, Game
@@ -106,7 +106,7 @@ class TestReplayMemory(unittest.TestCase):
 
     def _make_transition(self, reward=1.0, done=False):
         obs = [0.0] * self.OBS_SIZE
-        return ReplayMemory.create_transition(obs, [0, 1, 2], 0, obs, [0, 1, 2], reward, done)
+        return ReplayMemory.create_dqn_transition(obs, [0, 1, 2], 0, obs, [0, 1, 2], reward, done)
 
     def test_empty_memory_has_zero_length(self):
         self.assertEqual(len(self.memory), 0)
@@ -168,7 +168,7 @@ class TestReplayMemory(unittest.TestCase):
     def test_mask_values_in_transition(self):
         obs = [0.0] * self.OBS_SIZE
         valid = [0, 2, 5]
-        t = ReplayMemory.create_transition(obs, valid, 0, obs, valid, 1.0, False)
+        t = ReplayMemory.create_dqn_transition(obs, valid, 0, obs, valid, 1.0, False)
         self.assertEqual(t.valid_actions_mask[0].item(), 0.0)
         self.assertEqual(t.valid_actions_mask[2].item(), 0.0)
         self.assertAlmostEqual(t.valid_actions_mask[1].item(), -1e9)
@@ -254,7 +254,7 @@ class TestOptimizeModel(unittest.TestCase):
         valid = list(range(MAX_ACTION_COUNT))
         for _ in range(n):
             action = random.randint(0, MAX_ACTION_COUNT - 1)
-            t = ReplayMemory.create_transition(
+            t = ReplayMemory.create_dqn_transition(
                 obs, valid, action, obs, valid,
                 float(random.random()), random.random() > 0.9
             )
@@ -454,7 +454,7 @@ class TestTrainingSmoke(unittest.TestCase):
                 obs, reward, terminated, truncated, info = env.step(action)
                 obs = obs
                 done = terminated or truncated
-                t = ReplayMemory.create_transition(
+                t = ReplayMemory.create_dqn_transition(
                     prev_obs,
                     prev_info["valid_actions"],
                     action,
@@ -506,7 +506,7 @@ class TestNStepBuffer(unittest.TestCase):
 
     def test_pop_returns_transition(self):
         self._fill()
-        self.assertIsInstance(self.buf.pop(), Transition)
+        self.assertIsInstance(self.buf.pop(), DQNTransition)
 
     def test_pop_decrements_buffer(self):
         self._fill()

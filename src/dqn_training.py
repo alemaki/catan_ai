@@ -1,12 +1,7 @@
-import random
 import torch
-import gymnasium
-import catanatron.gym
-import os
-import json
-from utils.constants import device, MAX_ACTION_COUNT
-from utils.utils import create_game_stats, save_model, save_stats, create_random_players_env
-from models.dqn import reward_function, reset_reward_function, Transition, ReplayMemory, NStepBuffer, DQN, optimize_model, GAMMA
+from utils.constants import *
+from utils.utils import *
+from models.dqn import *
 
 LEARNING_RATE = 3e-4
 MEMORY = 100_000

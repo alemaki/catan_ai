@@ -1,95 +1,7 @@
 import random
 import torch.nn
-from utils.constants import MAX_ACTION_COUNT
-from collections import namedtuple, deque
-from catanatron import Game, Color, RESOURCES
-from utils.constants import WIN_REWARD, VP_REWARD, CITY_REWARD, ROAD_REWARD
-from catanatron.state import PLAYER_INITIAL_STATE
-from catanatron.state_functions import player_key
-
-Transition = namedtuple("Transition",
-                            ("observation",
-                             "valid_actions_mask",
-                             "action",
-                             "next_observation",
-                             "next_valid_actions_mask",
-                             "reward",
-                             "done"
-                            )
-                        )
-
-"""
-
-"""
-def reward_function(game: Game, agent_color: Color):
-    reward = 0
-    ps = game.state.player_state
-    key = player_key(game.state, agent_color)
-
-    # VP gain (primary)
-    vp_gain = ps[f"{key}_ACTUAL_VICTORY_POINTS"] - reward_function.last_points
-    reward += max(0, vp_gain) * VP_REWARD
-    reward_function.last_points = max(1, ps[f"{key}_ACTUAL_VICTORY_POINTS"])
-
-    # Resource diversity (encourages varied production) (secondary)
-    # resources = [ps[f"{key}_{r}_IN_HAND"] for r in RESOURCES]
-    # diversity = sum(1 for r in resources if r > 0)
-    # reward += (diversity - reward_function.last_diversity) * 0.1
-    # reward_function.last_diversity = diversity
-
-    # Building progress (secondary)
-    roads_built = PLAYER_INITIAL_STATE["ROADS_AVAILABLE"] - ps[f"{key}_ROADS_AVAILABLE"]
-    reward += max(0, (roads_built - reward_function.last_roads) * ROAD_REWARD)
-    reward_function.last_roads = max(1, roads_built)
-
-    # Win/loss (primary)
-    if game.winning_color() is not None:
-        reward += WIN_REWARD if game.winning_color() == agent_color else -WIN_REWARD
-        reset_reward_function()
-
-    return reward
-
-def reset_reward_function():
-    reward_function.last_points = 1
-    reward_function.last_roads = 1
-
-reset_reward_function()
-
-def valid_actions_to_mask(valid_actions, action_dim = MAX_ACTION_COUNT, device = "cpu"):
-    mask = torch.full((action_dim,), -1e9, device=device, dtype=torch.float32)
-    mask[valid_actions] = 0
-    return mask
-
-"""
-
-"""
-class ReplayMemory():
-    def __init__(self, capacity):
-        self.memory = deque([], maxlen = capacity)
-
-    @staticmethod
-    def create_transition(observation, valid_actions, action, next_observation, next_valid_actions, reward, done, device = "cpu"):
-        valid_actions_mask = valid_actions_to_mask(valid_actions, device = device) # makes tesnor
-        next_valid_actions_mask = valid_actions_to_mask(next_valid_actions, device = device)
-        return Transition(
-            torch.tensor(observation, dtype=torch.float32, device=device),
-            valid_actions_mask,
-            torch.tensor(action, dtype=torch.long, device=device),
-            torch.tensor(next_observation, dtype=torch.float32, device=device),
-            next_valid_actions_mask,
-            torch.tensor(reward, dtype=torch.float32, device=device),
-            torch.tensor(done, dtype=torch.float32, device=device),
-        )
-
-    def push(self, transition: Transition):
-        self.memory.append(transition)
-
-    def sample(self, batch_size):
-        return random.sample(self.memory, batch_size)
-
-    def __len__(self):
-        return len(self.memory)
-
+from collections import deque
+from utils.utils import valid_actions_to_mask
 
 class NStepBuffer:
     def __init__(self, n: int, gamma: float):
@@ -115,11 +27,11 @@ class NStepBuffer:
         obs, valid, action, _, _, _, _ = self.buffer[0]
         _, _, _, _, next_obs, next_valid, done = self.buffer[end_idx]
 
-        return ReplayMemory.create_transition(
+        return ReplayMemory.create_dqn_transition(
             obs, valid, action, next_obs, next_valid, R, done, device=device
         )
 
-    def pop(self, device="cpu") -> Transition:
+    def pop(self, device="cpu") -> DQNTransition:
         t = self._build_transition(device)
         self.buffer.popleft()
         return t
@@ -188,7 +100,7 @@ def optimize_model(optimizer, policy_net: DQN, target_net: DQN, memory: ReplayMe
         return 0, 0.0
 
     transitions = memory.sample(BATCH_SIZE)
-    batch = Transition(*zip(*transitions))
+    batch = DQNTransition(*zip(*transitions))
 
     observation_batch = torch.stack(batch.observation)
     action_batch = torch.stack(batch.action).unsqueeze(1)
