@@ -3,6 +3,7 @@ import json
 import torch
 import gymnasium
 import random
+import catanatron.gym
 from collections import namedtuple, deque
 from catanatron import Game, Color, RESOURCES
 from catanatron.features import feature_extractors
@@ -209,13 +210,13 @@ class ReplayMemory():
         valid_actions_mask = valid_actions_to_mask(valid_actions, device=device)
         to_tensor = lambda x, dtype: x if isinstance(x, torch.Tensor) else torch.tensor(x, dtype=dtype, device=device)
         return PPOState(
-            to_tensor(observation, dtype=torch.float32, device=device),
+            to_tensor(observation, dtype=torch.float32),
             valid_actions_mask,
-            to_tensor(action, dtype=torch.long, device=device),
-            to_tensor(reward, dtype=torch.float32, device=device),
-            to_tensor(value, dtype=torch.float32, device=device),
-            to_tensor(log_prob, dtype=torch.float32, device=device),
-            to_tensor(done, dtype=torch.float32, device=device),
+            to_tensor(action, dtype=torch.long),
+            to_tensor(reward, dtype=torch.float32),
+            to_tensor(value, dtype=torch.float32),
+            to_tensor(log_prob, dtype=torch.float32),
+            to_tensor(done, dtype=torch.float32),
         )
 
     def push(self, transition):
