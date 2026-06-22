@@ -27,6 +27,7 @@ selected = st.sidebar.multiselect(
     default=[f.name for f in stat_files],
 )
 window = st.sidebar.slider("Smoothing window (episodes)", min_value=10, max_value=500, value=100, step=10)
+skip = st.sidebar.slider("Skip first N episodes", min_value=0, max_value=2000, value=0, step=50)
 
 if not selected:
     st.warning("Select at least one file.")
@@ -56,10 +57,10 @@ def load(path: str) -> pd.DataFrame:
             rows.append(row)
     return pd.DataFrame(rows)
 
-datasets = {name: load(str(STATS_DIR / name)) for name in selected}
+datasets = {name: load(str(STATS_DIR / name)).query("episode > @skip") for name in selected}
 
 def roll(df: pd.DataFrame, col: str) -> pd.Series:
-    return df.set_index("episode")[col].rolling(window, min_periods=1).mean()
+    return df.set_index("episode")[col].rolling(window, min_periods=window).mean()
 
 st.subheader(f"Last {window} episodes")
 metric_cols = st.columns(len(datasets) * 4)

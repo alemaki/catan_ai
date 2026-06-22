@@ -144,9 +144,10 @@ def reward_function(game: Game, agent_color: Color):
     reward += max(0, (extra_settlements - reward_function.last_settlements) * SETTLEMENT_REWARD)
     reward_function.last_settlements = extra_settlements
 
-    # Penalize road spam when cities are available
-    if roads_built >= (cities_built + settlements_built)*2.5:
-        reward -= ROAD_SPAM_PENALTY
+    # Removed since the agent might be punished in weird situations
+    # # Penalize road spam when cities/settlements are available
+    # if roads_built >= (cities_built + settlements_built)*2.5 + 3:
+    #     reward -= ROAD_SPAM_PENALTY
 
     # Win/loss
     if game.winning_color() is not None:
@@ -156,7 +157,7 @@ def reward_function(game: Game, agent_color: Color):
 
 def reset_reward_function():
     reward_function.last_points = 1
-    reward_function.last_roads = 0
+    reward_function.last_roads = 1
     reward_function.last_cities = 0
     reward_function.last_settlements = 0
 
