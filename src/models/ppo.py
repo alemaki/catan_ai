@@ -4,21 +4,21 @@ from utils.constants import *
 from utils.utils import *
 
 BATCH_SIZE = 64
-GAMMA = 0.99
+GAMMA = 0.999
 LAMBDA = 0.95
 
 class PPOActor(torch.nn.Module):
     def __init__(self, observation_shape, actions_shape):
         super().__init__()
         self.linear = torch.nn.Sequential(
-            torch.nn.Linear(observation_shape, 512),
+            torch.nn.Linear(observation_shape, 1024),
+            torch.nn.ReLU(),
+            torch.nn.Linear(1024, 512),
             torch.nn.ReLU(),
             torch.nn.Linear(512, 512),
             torch.nn.ReLU(),
-            torch.nn.Linear(512, 256),
-            torch.nn.ReLU(),
         )
-        self.advantage_stream = torch.nn.Linear(256, actions_shape)
+        self.advantage_stream = torch.nn.Linear(512, actions_shape)
         self.softmax = torch.nn.Softmax(dim=-1)
 
     """
@@ -54,14 +54,14 @@ class PPOCritic(torch.nn.Module):
     def __init__(self, observation_shape):
         super().__init__()
         self.linear = torch.nn.Sequential(
-            torch.nn.Linear(observation_shape, 512),
+            torch.nn.Linear(observation_shape, 1024),
+            torch.nn.ReLU(),
+            torch.nn.Linear(1024, 512),
             torch.nn.ReLU(),
             torch.nn.Linear(512, 512),
             torch.nn.ReLU(),
-            torch.nn.Linear(512, 256),
-            torch.nn.ReLU(),
         )
-        self.value = torch.nn.Linear(256, 1)
+        self.value = torch.nn.Linear(512, 1)
 
     """
     Called with either one element to determine next action, or a batch
@@ -71,31 +71,32 @@ class PPOCritic(torch.nn.Module):
         x = self.linear(observation)
         return self.value(x)
     
-PPO_EPOCHS = 10
+PPO_EPOCHS = 1
 CLIP_EPS = 0.2
 VALUE_COEF = 0.5
-ENTROPY_COEF = 0.01
+ENTROPY_COEF = 0.05
 
 def compute_gae(memory: ReplayMemory, device="cpu"):
     all_transitions = memory.get_all()
     batch = PPOState(*zip(*all_transitions))
 
     rewards = torch.stack(batch.reward).to(device)
-    values = torch.stack(batch.value).to(device)
+    values  = torch.stack(batch.value).to(device)
+    dones   = torch.stack(batch.done).to(device)
 
     T = len(all_transitions)
     advantages = torch.zeros(T, device=device)
 
-    gae = rewards[-1] - values[-1]
-    advantages[-1] = gae
-    for t in reversed(range(T - 1)):
-        delta = rewards[t] + GAMMA * values[t + 1] - values[t]
-        gae = delta + GAMMA * LAMBDA * gae
+    gae = 0.0
+    for t in reversed(range(T)):
+        next_value = 0.0 if t == T - 1 else values[t + 1].item()
+        mask = 1.0 - dones[t].item()
+        delta = rewards[t] + GAMMA * next_value * mask - values[t]
+        gae   = delta + GAMMA * LAMBDA * mask * gae
         advantages[t] = gae
 
     value_targets = advantages + values
     return advantages, value_targets
-
 
 def ppo_update(actor: PPOActor, critic: PPOCritic, actor_optimizer, critic_optimizer, memory: ReplayMemory, device="cpu"):
     advantages, value_targets = compute_gae(memory, device)

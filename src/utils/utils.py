@@ -3,6 +3,7 @@ import json
 import torch
 import gymnasium
 import random
+import catanatron.gym
 from collections import namedtuple, deque
 from catanatron import Game, Color, RESOURCES
 from catanatron.features import feature_extractors
@@ -51,8 +52,7 @@ def get_feature_index_map(game: Game, agent_color: Color) -> dict:
 
     return feature_index_map_ref
 
-def create_game_stats(game: Game) -> dict:
-    agent_color: Color = game.state.colors[0]
+def create_game_stats(game: Game, agent_color = Color.BLUE) -> dict:
     key: str = player_key(game.state, agent_color)
     ps: dict = game.state.player_state
     result: dict = {}
@@ -118,42 +118,50 @@ def save_model(model, filepath: str):
     torch.save(model.state_dict(), model_path)
 
 
-"""
-
-"""
 def reward_function(game: Game, agent_color: Color):
     reward = 0
     ps = game.state.player_state
     key = player_key(game.state, agent_color)
 
-    # VP gain (primary)
+    # VP gain (primary signal)
     vp_gain = ps[f"{key}_ACTUAL_VICTORY_POINTS"] - reward_function.last_points
     reward += max(0, vp_gain) * VP_REWARD
     reward_function.last_points = max(1, ps[f"{key}_ACTUAL_VICTORY_POINTS"])
 
-    # Resource diversity (encourages varied production) (secondary)
-    # resources = [ps[f"{key}_{r}_IN_HAND"] for r in RESOURCES]
-    # diversity = sum(1 for r in resources if r > 0)
-    # reward += (diversity - reward_function.last_diversity) * 0.1
-    # reward_function.last_diversity = diversity
-
-    # Building progress (secondary)
+    # Roads
     roads_built = PLAYER_INITIAL_STATE["ROADS_AVAILABLE"] - ps[f"{key}_ROADS_AVAILABLE"]
     reward += max(0, (roads_built - reward_function.last_roads) * ROAD_REWARD)
-    reward_function.last_roads = max(1, roads_built)
+    reward_function.last_roads = roads_built
 
-    # Win/loss (primary)
+    # Cities
+    cities_built = PLAYER_INITIAL_STATE["CITIES_AVAILABLE"] - ps[f"{key}_CITIES_AVAILABLE"]
+    reward += max(0, (cities_built - reward_function.last_cities) * CITY_REWARD)
+    reward_function.last_cities = cities_built
+
+    # Settlements built beyond initial 2
+    settlements_built = PLAYER_INITIAL_STATE["SETTLEMENTS_AVAILABLE"] - ps[f"{key}_SETTLEMENTS_AVAILABLE"]
+    extra_settlements = max(0, settlements_built - 2)
+    reward += max(0, (extra_settlements - reward_function.last_settlements) * SETTLEMENT_REWARD)
+    reward_function.last_settlements = extra_settlements
+
+    # Penalize road spam when cities are available
+    if roads_built >= (cities_built + settlements_built)*2.5:
+        reward -= ROAD_SPAM_PENALTY
+
+    # Win/loss
     if game.winning_color() is not None:
         reward += WIN_REWARD if game.winning_color() == agent_color else -WIN_REWARD
-        reset_reward_function()
 
     return reward
 
 def reset_reward_function():
     reward_function.last_points = 1
-    reward_function.last_roads = 1
+    reward_function.last_roads = 0
+    reward_function.last_cities = 0
+    reward_function.last_settlements = 0
 
 reset_reward_function()
+
 
 def valid_actions_to_mask(valid_actions, action_dim = MAX_ACTION_COUNT, device = "cpu"):
     mask = torch.full((action_dim,), -1e9, device=device, dtype=torch.float32)
@@ -209,13 +217,13 @@ class ReplayMemory():
         valid_actions_mask = valid_actions_to_mask(valid_actions, device=device)
         to_tensor = lambda x, dtype: x if isinstance(x, torch.Tensor) else torch.tensor(x, dtype=dtype, device=device)
         return PPOState(
-            to_tensor(observation, dtype=torch.float32, device=device),
+            to_tensor(observation, dtype=torch.float32),
             valid_actions_mask,
-            to_tensor(action, dtype=torch.long, device=device),
-            to_tensor(reward, dtype=torch.float32, device=device),
-            to_tensor(value, dtype=torch.float32, device=device),
-            to_tensor(log_prob, dtype=torch.float32, device=device),
-            to_tensor(done, dtype=torch.float32, device=device),
+            to_tensor(action, dtype=torch.long),
+            to_tensor(reward, dtype=torch.float32),
+            to_tensor(value, dtype=torch.float32),
+            to_tensor(log_prob, dtype=torch.float32),
+            to_tensor(done, dtype=torch.float32),
         )
 
     def push(self, transition):
