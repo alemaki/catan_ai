@@ -170,6 +170,15 @@ def valid_actions_to_mask(valid_actions, action_dim = MAX_ACTION_COUNT, device =
     return mask
 
 
+REINFORCEState = namedtuple("REINFORCEState",
+                            ("observation",
+                             "valid_actions_mask",
+                             "action",
+                             "reward",
+                             "done"
+                            )
+                        )
+
 PPOState = namedtuple("PPOState",
                             ("observation",
                              "valid_actions_mask",
@@ -211,6 +220,18 @@ class ReplayMemory():
             next_valid_actions_mask,
             torch.tensor(reward, dtype=torch.float32, device=device),
             torch.tensor(done, dtype=torch.float32, device=device),
+        )
+
+    @staticmethod
+    def create_reinforce_state(observation, valid_actions, action, reward, done, device="cpu"):
+        valid_actions_mask = valid_actions_to_mask(valid_actions, device=device)
+        to_tensor = lambda x, dtype: x if isinstance(x, torch.Tensor) else torch.tensor(x, dtype=dtype, device=device)
+        return REINFORCEState(
+            to_tensor(observation, dtype=torch.float32),
+            valid_actions_mask,
+            to_tensor(action, dtype=torch.long),
+            to_tensor(reward, dtype=torch.float32),
+            to_tensor(done, dtype=torch.float32),
         )
 
     @staticmethod

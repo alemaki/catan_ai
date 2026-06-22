@@ -5,7 +5,7 @@ from utils.utils import *
 
 BATCH_SIZE = 64
 GAMMA = 0.999
-LAMBDA = 0.95
+LAMBDA = 0.99
 
 class PPOActor(torch.nn.Module):
     def __init__(self, observation_shape, actions_shape):
@@ -22,8 +22,7 @@ class PPOActor(torch.nn.Module):
         self.softmax = torch.nn.Softmax(dim=-1)
 
     """
-    Called with either one element to determine next action, or a batch
-    during optimization. Returns tensor([[left0exp,right0exp]...]).
+    This forward is a bit worthless, since the advantage expects the valid_actions_mask
     """
     def forward(self, observation):
         x = self.linear(observation)
@@ -40,7 +39,7 @@ class PPOActor(torch.nn.Module):
         mask = valid_actions_to_mask(valid_actions, logits.shape[0], device=device)
         logits = logits + mask
 
-        probs = torch.softmax(logits, dim=-1)
+        probs = self.softmax(logits)
         dist = torch.distributions.Categorical(probs)
         action = dist.sample()
         log_prob = dist.log_prob(action)
@@ -104,10 +103,10 @@ def ppo_update(actor: PPOActor, critic: PPOCritic, actor_optimizer, critic_optim
     all_transitions = memory.get_all()
     batch = PPOState(*zip(*all_transitions))
 
-    observations   = torch.stack(batch.observation).to(device)
-    actions        = torch.stack(batch.action).to(device)
-    old_log_probs  = torch.stack(batch.log_prob).to(device)
-    valid_masks    = torch.stack(batch.valid_actions_mask).to(device)
+    observations = torch.stack(batch.observation).to(device)
+    actions = torch.stack(batch.action).to(device)
+    old_log_probs = torch.stack(batch.log_prob).to(device)
+    valid_masks = torch.stack(batch.valid_actions_mask).to(device)
 
     advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
