@@ -1,7 +1,8 @@
 import random
 import torch.nn
 from collections import deque
-from utils.utils import valid_actions_to_mask
+from utils.constants import *
+from utils.utils import *
 
 class NStepBuffer:
     def __init__(self, n: int, gamma: float):
@@ -53,16 +54,16 @@ class DQN(torch.nn.Module):
     def __init__(self, observation_shape, actions_shape):
         super().__init__()
         self.shared = torch.nn.Sequential(
-            torch.nn.Linear(observation_shape, 512),
+            torch.nn.Linear(observation_shape, 1024),
             torch.nn.ReLU(),
-            torch.nn.Linear(512, 512),
+            torch.nn.Linear(1024, 1024),
             torch.nn.ReLU(),
-            torch.nn.Linear(512, 256),
+            torch.nn.Linear(1024, 512),
             torch.nn.ReLU(),
         )
         # Dueling streams
-        self.value_stream = torch.nn.Linear(256, 1)
-        self.advantage_stream = torch.nn.Linear(256, actions_shape)
+        self.value_stream = torch.nn.Linear(512, 1)
+        self.advantage_stream = torch.nn.Linear(512, actions_shape)
 
     """
     Called with either one element to determine next action, or a batch

@@ -15,11 +15,12 @@ Windows:
 ```
 Linux:
 ```bash
-./venv/Scripts/activate
+. ./venv/bin/activate
 ```
 
 Install the requirements:
 ```bash
+cd catanatron && pip install -e .[web,gym,dev]
 pip install -r ./requirements.txt
 ```
 
