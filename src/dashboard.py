@@ -26,7 +26,7 @@ selected = st.sidebar.multiselect(
     options=[f.name for f in stat_files],
     default=[f.name for f in stat_files],
 )
-window = st.sidebar.slider("Smoothing window (episodes)", min_value=10, max_value=500, value=100, step=10)
+window = st.sidebar.slider("Smoothing window (episodes)", min_value=10, max_value=1000, value=100, step=10)
 skip = st.sidebar.slider("Skip first N episodes", min_value=0, max_value=2000, value=0, step=50)
 
 if not selected:

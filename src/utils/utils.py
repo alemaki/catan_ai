@@ -94,7 +94,7 @@ def create_game_stats(game: Game, agent_color = Color.BLUE) -> dict:
     return result
 
 def save_stats(game_stats: dict, episode: int, total_loss: float, filepath: str,
-               epsilon: float = 0.0, total_reward: float = 0.0, mean_max_q: float = 0.0):
+               epsilon: float = 0.0, total_reward: float = 0.0, mean_max_q: float = 0.0, loss_is_mean = False):
     stats_path = os.path.join(STATS_SAVE_PATH, filepath)
     os.makedirs(os.path.dirname(stats_path), exist_ok=True)
 
@@ -107,7 +107,7 @@ def save_stats(game_stats: dict, episode: int, total_loss: float, filepath: str,
         "stats": game_stats,
     }
 
-    print("Loss for entire game (mean):", total_loss / game_stats["game_turn"])
+    print("Loss for entire game (mean):", total_loss / (1 if loss_is_mean else game_stats["game_turn"]))
 
     with open(stats_path, "a") as f:
         f.write(json.dumps(entry) + "\n")

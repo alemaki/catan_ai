@@ -5,9 +5,9 @@ from models.ppo import PPOActor, PPOCritic, ppo_update
 
 LEARNING_RATE = 9e-4
 ROLLOUT_CAPACITY = 4096
-EPISODES = 50_000
+EPISODES = 15_000
 
-env = create_random_players_env(num_enemies=1)#, reward_function = reward_function)
+env = create_random_players_env(num_enemies=1, reward_function = reward_function)
 observation, _ = env.reset()
 
 actor  = PPOActor(observation.shape[0], MAX_ACTION_COUNT).to(device)
@@ -59,11 +59,11 @@ for episode in range(EPISODES + 1):
 
     game_stats = create_game_stats(env.unwrapped.game, Color.BLUE)
 
-    save_stats(game_stats, episode, abs(actor_loss) + abs(critic_loss), "ppo_bigger_stats_1v1_default_reward.json",
+    save_stats(game_stats, episode, abs(actor_loss) + abs(critic_loss), "ppo_smaller_stats_1v1_better_reward.json",
                total_reward=total_reward)
 
     if episode % (EPISODES // 5) == 0 and episode != 0:
-        save_model(actor,  f"ppo_bigger_1v1_default_reward/actor_episode_{episode}.pt")
-        save_model(critic, f"ppo_bigger_1v1_default_reward/critic_episode_{episode}.pt")
+        save_model(actor,  f"ppo_smaller_1v1_better_reward/actor_episode_{episode}.pt")
+        save_model(critic, f"ppo_smaller_1v1_better_reward/critic_episode_{episode}.pt")
 
 env.close()
