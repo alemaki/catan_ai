@@ -3,6 +3,9 @@ import torch.nn
 from collections import deque
 from utils.constants import *
 from utils.utils import *
+from utils.model_player import ActionSelectableModel
+
+DOUBLE_DQN = True
 
 class NStepBuffer:
     def __init__(self, n: int, gamma: float):
@@ -48,7 +51,7 @@ class NStepBuffer:
         self.buffer.clear()
 
 
-class DQN(torch.nn.Module):
+class DQN(torch.nn.Module, ActionSelectableModel):
 
 
     def __init__(self, observation_shape, actions_shape):
@@ -76,7 +79,7 @@ class DQN(torch.nn.Module):
         # Dueling: Q = V + (A - mean(A))
         return value + advantage - advantage.mean(dim=-1, keepdim=True)
 
-    def select_action(self, observation: list, valid_actions: list, epsilon: float, device = "cpu") -> int:
+    def select_action(self, observation: list, valid_actions: list, device = "cpu",  epsilon: float = 0.0) -> int:
         # Random choice for espilon start
         if random.random() < epsilon:
             return random.choice(valid_actions)
@@ -114,11 +117,16 @@ def optimize_model(optimizer, policy_net: DQN, target_net: DQN, memory: ReplayMe
 
     # Q target
     with torch.no_grad():
-        next_q = target_net(next_observation_batch)
-
         next_mask_batch = torch.stack(batch.next_valid_actions_mask)
-        masked_next_q = next_q + next_mask_batch
-        max_next_q = masked_next_q.max(dim=1).values
+        if DOUBLE_DQN:
+            # Take the next actions the policy predicts and evaluate them with the target netowrk to get the next_q_vals
+            next_best_actions = (policy_net(next_observation_batch) + next_mask_batch).argmax(dim=1, keepdim=True)
+            max_next_q = target_net(next_observation_batch).gather(1, next_best_actions).squeeze()
+        else:
+            # Evaluate the next action with the target network and take the best values from it
+            next_q = target_net(next_observation_batch)
+            masked_next_q = next_q + next_mask_batch
+            max_next_q = masked_next_q.max(dim=1).values
 
         expected_q = reward_batch + (GAMMA ** n) * max_next_q * (1 - done_batch)
         mean_max_q = max_next_q.mean().item()

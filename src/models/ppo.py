@@ -2,12 +2,13 @@ import random
 import torch.nn
 from utils.constants import *
 from utils.utils import *
+from utils.model_player import ActionSelectableModel
 
 BATCH_SIZE = 64
 GAMMA = 0.999
 LAMBDA = 0.99
 
-class PPOActor(torch.nn.Module):
+class PPOActor(torch.nn.Module, ActionSelectableModel):
     def __init__(self, observation_shape, actions_shape):
         super().__init__()
         self.linear = torch.nn.Sequential(
@@ -29,7 +30,7 @@ class PPOActor(torch.nn.Module):
         advantage = self.advantage_stream(x)
         return self.softmax(advantage)
 
-    def select_action(self, observation: list, valid_actions: list, device="cpu") -> tuple[int, torch.Tensor]:
+    def select_training_action(self, observation: list, valid_actions: list, device="cpu") -> tuple[int, torch.Tensor]:
         observation = torch.tensor(observation, dtype=torch.float32).unsqueeze(0).to(device)
 
         with torch.no_grad():
@@ -45,7 +46,11 @@ class PPOActor(torch.nn.Module):
         log_prob = dist.log_prob(action)
 
         return action.item(), log_prob
-
+        
+    """ This is used for the ModelPlayer. """
+    def select_action(self, observation: list, valid_actions: list, device="cpu") -> tuple[int, torch.Tensor]:
+        x, _ = self.select_training_action(observation, valid_actions, device=device)
+        return x
 
 class PPOCritic(torch.nn.Module):
 

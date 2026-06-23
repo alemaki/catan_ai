@@ -44,7 +44,7 @@ for episode in range(EPISODES + 1):
     n_opt_steps: int = 0
     while not done:
         with torch.no_grad():
-            action = policy_net.select_action(prev_observation, info["valid_actions"], epsilon, device = device)
+            action = policy_net.select_action(prev_observation, info["valid_actions"], device = device, epsilon = epsilon)
 
         observation, reward, terminated, truncated, info = env.step(action)
         if NORMALIZATION:
@@ -84,13 +84,13 @@ for episode in range(EPISODES + 1):
     # save stats for game
     ep_mean_max_q = total_mean_max_q / max(n_opt_steps, 1)
     game_stats: dict = create_game_stats(env.unwrapped.game, Color.BLUE)
-    save_stats(game_stats, episode, total_loss, "dqn_smaller_stats_dueling_1v1_better_reward.json",
+    save_stats(game_stats, episode, total_loss, "d3qn_smaller_stats_1v1_better_reward.json",
                epsilon=epsilon, total_reward=total_reward, mean_max_q=ep_mean_max_q)
 
     # update target network occasionally
     if episode % 5 == 0:
         target_net.load_state_dict(policy_net.state_dict())
     if episode % (EPISODES // 5) == 0 and episode != 0:
-        save_model(target_net, f"dqn_smaller_stats_dueling_1v1_better_reward/dqn_episode_{episode}.pt")
+        save_model(target_net, f"d3qn_smaller_stats_1v1_better_reward/dqn_episode_{episode}.pt")
 
 env.close()

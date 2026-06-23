@@ -95,13 +95,13 @@ class TestPPOActor(unittest.TestCase):
         self.assertTrue(torch.allclose(probs.sum(dim=-1), torch.ones(4), atol=1e-5))
 
     def test_select_action_returns_valid_action(self):
-        action, _ = self.actor.select_action([0.0] * OBS_SIZE, [0, 5, 100, 200])
+        action, _ = self.actor.select_training_action([0.0] * OBS_SIZE, [0, 5, 100, 200])
         self.assertIn(action, [0, 5, 100, 200])
 
     def test_select_action_always_valid_over_many_calls(self):
         valid = [1, 3, 7]
         for _ in range(30):
-            action, _ = self.actor.select_action([0.0] * OBS_SIZE, valid)
+            action, _ = self.actor.select_training_action([0.0] * OBS_SIZE, valid)
             self.assertIn(action, valid)
 
     def test_select_action_mask_blocks_invalid_actions(self):
@@ -110,25 +110,25 @@ class TestPPOActor(unittest.TestCase):
             self.actor.advantage_stream.bias.zero_()
             self.actor.advantage_stream.bias[5] = 1000.0
         for _ in range(20):
-            action, _ = self.actor.select_action([0.0] * OBS_SIZE, valid_actions=[0])
+            action, _ = self.actor.select_training_action([0.0] * OBS_SIZE, valid_actions=[0])
             self.assertEqual(action, 0)
 
     def test_select_action_log_prob_is_tensor(self):
-        _, log_prob = self.actor.select_action([0.0] * OBS_SIZE, [0, 1])
+        _, log_prob = self.actor.select_training_action([0.0] * OBS_SIZE, [0, 1])
         self.assertIsInstance(log_prob, torch.Tensor)
 
     def test_select_action_log_prob_is_non_positive(self):
-        _, log_prob = self.actor.select_action([0.0] * OBS_SIZE, [0, 1, 2])
+        _, log_prob = self.actor.select_training_action([0.0] * OBS_SIZE, [0, 1, 2])
         self.assertLessEqual(log_prob.item(), 0.0)
 
     def test_select_action_single_valid_always_returned(self):
         for _ in range(20):
-            action, _ = self.actor.select_action([0.0] * OBS_SIZE, [42])
+            action, _ = self.actor.select_training_action([0.0] * OBS_SIZE, [42])
             self.assertEqual(action, 42)
 
     def test_select_action_single_valid_log_prob_near_zero(self):
         """Only one valid action means probability 1 → log_prob ≈ 0."""
-        _, log_prob = self.actor.select_action([0.0] * OBS_SIZE, [0])
+        _, log_prob = self.actor.select_training_action([0.0] * OBS_SIZE, [0])
         self.assertAlmostEqual(log_prob.item(), 0.0, places=4)
 
     def test_forward_output_is_finite(self):
@@ -296,7 +296,7 @@ class TestPPOTrainingSmoke(unittest.TestCase):
 
         done = False
         while not done:
-            action, log_prob = actor.select_action(obs, info["valid_actions"])
+            action, log_prob = actor.select_training_action(obs, info["valid_actions"])
             with torch.no_grad():
                 value = critic(torch.tensor(obs, dtype=torch.float32).unsqueeze(0)).squeeze()
             next_obs, reward, terminated, truncated, next_info = env.step(action)

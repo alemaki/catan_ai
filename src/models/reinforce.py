@@ -2,11 +2,12 @@ import torch
 import torch.nn as nn
 from utils.constants import *
 from utils.utils import valid_actions_to_mask, ReplayMemory, REINFORCEState
+from utils.model_player import ActionSelectableModel
 
 GAMMA = 0.999
 
 
-class REINFORCEAgent(nn.Module):
+class REINFORCEAgent(nn.Module, ActionSelectableModel):
     def __init__(self, obs_size, num_actions):
         super().__init__()
         self.network = nn.Sequential(

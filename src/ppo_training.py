@@ -28,7 +28,7 @@ for episode in range(EPISODES + 1):
     total_reward = 0.0
 
     while not done:
-        action, log_prob = actor.select_action(observation, info["valid_actions"], device=device)
+        action, log_prob = actor.select_training_action(observation, info["valid_actions"], device=device)
 
         with torch.no_grad():
             obs_tensor = torch.tensor(observation, dtype=torch.float32).unsqueeze(0).to(device)
