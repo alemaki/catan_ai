@@ -8,17 +8,17 @@ GAMMA = 0.999
 
 
 class REINFORCEAgent(nn.Module, ActionSelectableModel):
-    def __init__(self, obs_size, num_actions):
+    def __init__(self, obs_size, num_actions, neurons = 1024):
         super().__init__()
         self.network = nn.Sequential(
-            nn.Linear(obs_size, 1024),
+            nn.Linear(obs_size, neurons),
             nn.ReLU(),
-            nn.Linear(1024, 512),
+            nn.Linear(neurons, neurons//2),
             nn.ReLU(),
-            nn.Linear(512, 512),
+            nn.Linear(neurons//2, neurons//2),
             nn.ReLU(),
         )
-        self.policy_head = nn.Linear(512, num_actions)
+        self.policy_head = nn.Linear(neurons//2, num_actions)
 
     def forward(self, obs):
         x = self.network(obs)
