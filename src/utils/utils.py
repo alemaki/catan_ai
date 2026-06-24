@@ -7,7 +7,7 @@ import catanatron.gym
 from collections import namedtuple, deque
 from catanatron import Game, Color, RESOURCES
 from catanatron.features import feature_extractors
-from catanatron.players.weighted_random import WeightedRandomPlayer
+from catanatron.players.weighted_random import WeightedRandomPlayer, Player
 from catanatron.state import PLAYER_INITIAL_STATE
 from catanatron.state_functions import player_key
 from catanatron.models.enums import DEVELOPMENT_CARDS
@@ -16,18 +16,22 @@ from utils.constants import *
 feature_index_map_ref: dict | None = None
 game_ref: Game | None = None
 
-def create_random_players_env(reward_function=None, num_enemies: int = 3) -> gymnasium.Env:
-    colors = [Color.RED, Color.WHITE, Color.ORANGE]
-    enemies = [WeightedRandomPlayer(c) for c in colors[:num_enemies]]
+def create_players_env(reward_function=None, enemies: list[Player] = []) -> gymnasium.Env:
+    if len(enemies) == 0:
+        raise "should have some enemies"
     config = {"enemies": enemies}
     if reward_function is not None:
         config["reward_function"] = reward_function
-
     env = gymnasium.make(
         "catanatron/Catanatron-v0",
         config=config,
     )
     return env
+
+def create_random_players_env(reward_function=None, num_enemies: int = 3) -> gymnasium.Env:
+    colors = [Color.RED, Color.WHITE, Color.ORANGE]
+    enemies = [WeightedRandomPlayer(c) for c in colors[:num_enemies]]
+    return create_players_env(reward_function=reward_function, enemies=enemies)
 
 def get_feature_index_map(game: Game, agent_color: Color) -> dict:
     assert isinstance(game, Game)

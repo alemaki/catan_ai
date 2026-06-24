@@ -54,9 +54,8 @@ class NStepBuffer:
 class DQN(torch.nn.Module, ActionSelectableModel):
 
 
-    def __init__(self, observation_shape, actions_shape, bigger: bool = False):
+    def __init__(self, observation_shape, actions_shape, neurons: int = 512):
         super().__init__()
-        neurons = 1024 if bigger else 512
         self.shared = torch.nn.Sequential(
             torch.nn.Linear(observation_shape, neurons),
             torch.nn.ReLU(),
@@ -140,3 +139,131 @@ def optimize_model(optimizer, policy_net: DQN, target_net: DQN, memory: ReplayMe
     optimizer.step()
 
     return loss.item(), mean_max_q
+
+# Example config
+DQN_TRAINING_CONFIG = {
+    "reward_function"   : None,
+    "learning_rate"     : 3e-4,
+    "gamma"             : 0.999,
+    "memory"            : 100_000,
+    "neurons"           : 512, # I think this shouldn't be here, but whatever.
+    "n_steps"           : 1,
+    "should_save"       : False,
+    "save_model_path"   : MODELS_SAVE_PATH,
+    "save_model_folder" : "", # leave empty for no save
+    "save_stats_path"   : STATS_SAVE_PATH,
+    "save_stats_name"   : "", # leave empty for no save
+    "starting_episode"  : 0,
+    "ending_episode"    : 15_000,
+    "save_factor"       : 5, # will save that many times factoring ending_episode. (e.g. ending episode = 1K, factor 5 will save on 2K, 4K, 6K, 8K 10K)
+    "load_saved_model"  : "",# leave empty for no load
+    "epsilon_start"     : 1.0,
+    "eps_min"           : 0.001,
+    "eps_steps_decay"   : 1_000_000, # Million steps to reach eps_min
+    "target_update_episodes" : 5,
+    "optimize_model"    : True,
+    "enemies"           : [WeightedRandomPlayer(Color.RED)],
+    "on_episode_end"    : None, # function for episode end, args: episode, policy_net, target_net, memory, epsilon
+} 
+
+
+def dqn_run(dqn_config: dict):
+    env = create_players_env(reward_function=dqn_config.get("reward_function", None), enemies=dqn_config.get("enemies", []))
+    observation, _ = env.reset()
+
+    policy_net = DQN(observation.shape[0], MAX_ACTION_COUNT, neurons=dqn_config["neurons"]).to(device)
+    target_net = DQN(observation.shape[0], MAX_ACTION_COUNT, neurons=dqn_config["neurons"]).to(device)
+    if dqn_config.get("load_saved_model", "") != "":
+        path = os.path.join(MODELS_SAVE_PATH, dqn_config.get("load_saved_model"))
+        policy_net.load_state_dict(torch.load(path, map_location=device))
+
+    target_net.load_state_dict(policy_net.state_dict())
+    target_net.eval()
+
+    memory = ReplayMemory(dqn_config["memory"])
+    n_step_buffer = NStepBuffer(n=dqn_config["n_steps"], gamma=dqn_config["gamma"])
+
+    optimizer = torch.optim.AdamW(policy_net.parameters(), lr=dqn_config["learning_rate"], amsgrad=True)
+
+    epsilon: float  = dqn_config["epsilon_start"]
+    EPS_MIN: float = dqn_config["eps_min"]
+    EPS_DECAY_STEP: float = (EPS_MIN / epsilon) ** (1 / dqn_config["eps_steps_decay"])
+
+    policy_net.train()
+
+    for episode in range(dqn_config["starting_episode"], dqn_config["ending_episode"] + 1):
+        observation, info = env.reset()
+        reset_reward_function()
+        n_step_buffer.clear()
+        done: bool = False
+        prev_observation: list = observation
+        prev_info: dict = info
+        total_loss: float = 0
+        total_reward: float = 0
+        total_mean_max_q: float = 0
+        n_opt_steps: int = 0
+        while not done:
+            with torch.no_grad():
+                action = policy_net.select_action(prev_observation, info["valid_actions"], device = device, epsilon = epsilon)
+
+            observation, reward, terminated, truncated, info = env.step(action)
+
+            done = terminated or truncated
+            total_reward += reward
+
+            n_step_buffer.append(
+                prev_observation,
+                prev_info["valid_actions"],
+                action,
+                reward,
+                observation,
+                info["valid_actions"],
+                done,
+            )
+
+            if n_step_buffer.ready():
+                memory.push(n_step_buffer.pop(device))
+
+            prev_observation = observation
+            prev_info = info
+
+            if dqn_config.get("optimize_model", True):
+                loss, mean_max_q = optimize_model(optimizer, policy_net, target_net, memory, n=dqn_config["n_steps"])
+                total_loss += loss
+                if loss > 0:
+                    total_mean_max_q += mean_max_q
+                    n_opt_steps += 1
+
+            # Epsilon update
+            epsilon = max(EPS_MIN, epsilon * EPS_DECAY_STEP)
+
+        # flush remaining steps from the n-step buffer into memory
+        for t in n_step_buffer.flush(device):
+            memory.push(t)
+
+        # save stats for game
+        ep_mean_max_q = total_mean_max_q / max(n_opt_steps, 1)
+        game_stats: dict = create_game_stats(env.unwrapped.game, Color.BLUE)
+
+        if dqn_config.get("save_stats_name", "") != "":
+            save_stats(
+                    game_stats,
+                    episode,
+                    total_loss,
+                    dqn_config.get("save_stats_name"),
+                    epsilon=epsilon,
+                    total_reward=total_reward,
+                    mean_max_q=ep_mean_max_q)
+
+        # update target network
+        if episode % dqn_config["target_update_episodes"] == 0:
+            target_net.load_state_dict(policy_net.state_dict())
+        if dqn_config.get("save_model_folder", "") != "" and\
+            episode % (dqn_config["ending_episode"] // dqn_config["save_factor"]) == 0 and\
+            episode != 0:
+            save_model(target_net, f"{dqn_config['save_model_folder']}/dqn_episode_{episode}.pt")
+
+        if dqn_config.get("on_episode_end") is not None:
+            dqn_config.get("on_episode_end")(episode, policy_net, target_net, memory, epsilon)
+
+    env.close()
