@@ -9,17 +9,17 @@ GAMMA = 0.999
 LAMBDA = 0.99
 
 class PPOActor(torch.nn.Module, ActionSelectableModel):
-    def __init__(self, observation_shape, actions_shape):
+    def __init__(self, observation_shape, actions_shape, neurons=512):
         super().__init__()
         self.linear = torch.nn.Sequential(
-            torch.nn.Linear(observation_shape, 512),
+            torch.nn.Linear(observation_shape, neurons),
             torch.nn.ReLU(),
-            torch.nn.Linear(512, 512),
+            torch.nn.Linear(neurons, neurons),
             torch.nn.ReLU(),
-            torch.nn.Linear(512, 256),
+            torch.nn.Linear(neurons, neurons//2),
             torch.nn.ReLU(),
         )
-        self.advantage_stream = torch.nn.Linear(256, actions_shape)
+        self.advantage_stream = torch.nn.Linear(neurons//2, actions_shape)
         self.softmax = torch.nn.Softmax(dim=-1)
 
     """
@@ -55,17 +55,17 @@ class PPOActor(torch.nn.Module, ActionSelectableModel):
 class PPOCritic(torch.nn.Module):
 
 
-    def __init__(self, observation_shape):
+    def __init__(self, observation_shape, neurons=512):
         super().__init__()
         self.linear = torch.nn.Sequential(
-            torch.nn.Linear(observation_shape, 512),
+            torch.nn.Linear(observation_shape, neurons),
             torch.nn.ReLU(),
-            torch.nn.Linear(512, 512),
+            torch.nn.Linear(neurons, neurons),
             torch.nn.ReLU(),
-            torch.nn.Linear(512, 256),
+            torch.nn.Linear(neurons, neurons//2),
             torch.nn.ReLU(),
         )
-        self.value = torch.nn.Linear(256, 1)
+        self.value = torch.nn.Linear(neurons//2, 1)
 
     """
     Called with either one element to determine next action, or a batch
@@ -161,3 +161,97 @@ def ppo_update(actor: PPOActor, critic: PPOCritic, actor_optimizer, critic_optim
             total_critic_loss += critic_loss.item()
 
     return total_actor_loss, total_critic_loss
+
+
+PPO_TRAINING_CONFIG = {
+    "reward_function"   : None,
+    "learning_rate"     : 9e-4,
+    "actor_neurons"     : 1024,
+    "critic_neurons"    : 1024,
+    "rollout_capacity"  : 4096,
+    "save_model_folder" : "",  # leave empty for no save
+    "save_stats_name"   : "",  # leave empty for no save
+    "starting_episode"  : 0,
+    "ending_episode"    : 15_000,
+    "save_factor"       : 5,
+    "load_saved_actor"  : "",  # leave empty for no load
+    "load_saved_critic" : "",  # leave empty for no load
+    "enemies"           : [WeightedRandomPlayer(Color.RED)],
+    "on_episode_end"    : None, # function to run on episode end, args: episode, actor, critic, memory
+}
+
+
+def ppo_run(ppo_config: dict):
+    env = create_players_env(reward_function=ppo_config.get("reward_function", None), enemies=ppo_config.get("enemies", []))
+    observation, _ = env.reset()
+
+    actor  = PPOActor(observation.shape[0], MAX_ACTION_COUNT, ppo_config["actor_neurons"]).to(device)
+    critic = PPOCritic(observation.shape[0], ppo_config["critic_neurons"]).to(device)
+
+    if ppo_config.get("load_saved_actor", "") != "":
+        path = os.path.join(MODELS_SAVE_PATH, ppo_config["load_saved_actor"])
+        actor.load_state_dict(torch.load(path, map_location=device))
+    if ppo_config.get("load_saved_critic", "") != "":
+        path = os.path.join(MODELS_SAVE_PATH, ppo_config["load_saved_critic"])
+        critic.load_state_dict(torch.load(path, map_location=device))
+
+    actor_optimizer  = torch.optim.AdamW(actor.parameters(),  lr=ppo_config["learning_rate"])
+    critic_optimizer = torch.optim.AdamW(critic.parameters(), lr=ppo_config["learning_rate"])
+
+    memory = ReplayMemory(ppo_config["rollout_capacity"])
+
+    actor.train()
+    critic.train()
+
+    for episode in range(ppo_config["starting_episode"], ppo_config["ending_episode"] + 1):
+        observation, info = env.reset()
+        reset_reward_function()
+        done = False
+        total_reward = 0.0
+
+        while not done:
+            action, log_prob = actor.select_training_action(observation, info["valid_actions"], device=device)
+
+            with torch.no_grad():
+                obs_tensor = torch.tensor(observation, dtype=torch.float32).unsqueeze(0).to(device)
+                value = critic(obs_tensor).squeeze()
+
+            next_observation, reward, terminated, truncated, next_info = env.step(action)
+            done = terminated or truncated
+            total_reward += reward
+
+            memory.push(ReplayMemory.create_ppo_state(
+                observation,
+                info["valid_actions"],
+                action,
+                reward,
+                value,
+                log_prob,
+                done,
+                device=device,
+            ))
+
+            observation = next_observation
+            info = next_info
+
+        actor_loss, critic_loss = ppo_update(
+            actor, critic, actor_optimizer, critic_optimizer, memory, device=device
+        )
+        memory.clear()
+
+        game_stats = create_game_stats(env.unwrapped.game, Color.BLUE)
+
+        if ppo_config.get("save_stats_name", "") != "":
+            save_stats(game_stats, episode, abs(actor_loss) + abs(critic_loss),
+                       ppo_config["save_stats_name"], total_reward=total_reward)
+
+        if ppo_config.get("save_model_folder", "") != "" and \
+                episode % (ppo_config["ending_episode"] // ppo_config["save_factor"]) == 0 and \
+                episode != 0:
+            save_model(actor,  f"{ppo_config['save_model_folder']}/actor_episode_{episode}.pt")
+            save_model(critic, f"{ppo_config['save_model_folder']}/critic_episode_{episode}.pt")
+
+        if ppo_config.get("on_episode_end") is not None:
+            ppo_config.get("on_episode_end")(episode, actor, critic, memory)
+
+    env.close()
