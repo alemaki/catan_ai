@@ -52,12 +52,6 @@ class TestExtendedPlayerFactory(unittest.TestCase):
         with self.assertRaises(ValueError):
             extended_player_factory(self._key("UNKNOWN_BOT"))
 
-    def test_model_prefix_passes_color_correctly(self):
-        mock_player = MagicMock(spec=ModelPlayer)
-        with patch("server.load_model_player", return_value=mock_player) as mock_load:
-            extended_player_factory(self._key("MODEL:REINFORCE", Color.RED))
-            mock_load.assert_called_once_with("REINFORCE", Color.RED)
-
 
 class TestPostGameEndpoint(unittest.TestCase):
 

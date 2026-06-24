@@ -286,7 +286,7 @@ class TestCreateGameStats(unittest.TestCase):
         self.assertTrue(stats["mp_won"])
 
     def test_finished_true_mp_won_false_when_enemy_wins(self):
-        enemy_key = player_key(self.game.state, self.game.state.colors[1])
+        enemy_key = player_key(self.game.state, Color.RED)
         self.game.state.player_state[f"{enemy_key}_ACTUAL_VICTORY_POINTS"] = 10
         stats = create_game_stats(self.game)
         self.assertTrue(stats["finished"])
