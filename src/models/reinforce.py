@@ -25,7 +25,7 @@ class REINFORCEAgent(nn.Module, ActionSelectableModel):
         return self.policy_head(x)
 
     def select_action(self, obs, valid_actions, device="cpu"):
-        obs_tensor = torch.tensor(obs, dtype=torch.float32).unsqueeze(0).to(device)
+        obs_tensor = torch.as_tensor(obs, dtype=torch.float32).unsqueeze(0).to(device)
         with torch.no_grad():
             logits = self.forward(obs_tensor).squeeze(0)
         mask = valid_actions_to_mask(valid_actions, logits.shape[0], device=device)

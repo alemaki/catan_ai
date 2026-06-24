@@ -5,10 +5,12 @@ import pandas as pd
 import streamlit as st
 from pathlib import Path
 
+# Disclaimer: This code was AI generated.
+
 matplotlib.use("Agg")
 
 STATS_DIR = Path(__file__).parent / "models" / "stats"
-COLORS = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#020202"]
+COLORS = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#020202", "#768a9b", "#861574", "#E6FF01"]
 LINESTYLES = ["-", "--", "-.", ":"]
 
 st.set_page_config(page_title="Catan DQN Dashboard", layout="wide")

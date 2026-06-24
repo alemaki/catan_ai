@@ -16,6 +16,7 @@ ROAD_SPAM_PENALTY   = 0.02
 
 MODELS_SAVE_PATH = "./models/saved/"
 STATS_SAVE_PATH = "./models/stats/"
+DOCUMENTATION_SAVE_PATH = "../documentation/"
 
 device = torch.device(
     "cuda" if torch.cuda.is_available() else

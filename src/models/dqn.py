@@ -87,7 +87,7 @@ class DQN(torch.nn.Module, ActionSelectableModel):
 
         with torch.no_grad():
             # Transalte observation
-            observation = torch.tensor(observation, dtype=torch.float32).unsqueeze(0).to(device)
+            observation = torch.as_tensor(observation, dtype=torch.float32).unsqueeze(0).to(device)
 
             # Get result of the forward
             q_values = self(observation).squeeze(0)

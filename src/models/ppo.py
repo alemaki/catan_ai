@@ -31,7 +31,7 @@ class PPOActor(torch.nn.Module, ActionSelectableModel):
         return self.softmax(advantage)
 
     def select_training_action(self, observation: list, valid_actions: list, device="cpu") -> tuple[int, torch.Tensor]:
-        observation = torch.tensor(observation, dtype=torch.float32).unsqueeze(0).to(device)
+        observation = torch.as_tensor(observation, dtype=torch.float32).unsqueeze(0).to(device)
 
         with torch.no_grad():
             logits = self.linear(observation)
