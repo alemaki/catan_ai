@@ -12,21 +12,21 @@ EPISODES = 15_000
 N_STEPS = 1
 OPPONENT_SYNC_EVERY = 100
 
-CHECKPOINT = "dqn_smaller_stats_dueling_1v1_better_reward/dqn_episode_15000.pt"
-STATS_FILE = "saved_self_play/dqn_selfplay.json"
-REAL_STATS_FILE = "dqn_selfplay.json"
-SAVE_PREFIX = "dqn_selfplay"
+CHECKPOINT = "dqn_bigger_stats_dueling_1v1_better_reward/dqn_episode_4000.pt"
+STATS_FILE = "saved_self_play/dqn_bigger_selfplay.json"
+REAL_STATS_FILE = "dqn_bigger_selfplay.json"
+SAVE_PREFIX = "dqn_bigger_selfplay"
 
 # Hack the observation size a little. TODO: fix.
-env = create_random_players_env(reward_function=reward_function, num_enemies=0)
+env = create_random_players_env(reward_function=reward_function, num_enemies=1)
 observation, _ = env.reset()
 
 obs_size = observation.shape[0]
 
-policy_net = DQN(obs_size, MAX_ACTION_COUNT).to(device)
+policy_net = DQN(obs_size, MAX_ACTION_COUNT, bigger = True).to(device)
 policy_net.load_state_dict(torch.load(os.path.join(MODELS_SAVE_PATH, CHECKPOINT), map_location=device))
 
-target_net = DQN(obs_size, MAX_ACTION_COUNT).to(device)
+target_net = DQN(obs_size, MAX_ACTION_COUNT, bigger = True).to(device)
 target_net.load_state_dict(policy_net.state_dict())
 target_net.eval()
 
@@ -53,7 +53,7 @@ EPS_DECAY_STEP: float = (EPS_MIN / epsilon) ** (1 / 500_000)
 policy_net.train()
 
 
-def log_games_with_random(model: DQN, number_of_games = OPPONENT_SYNC_EVERY):
+def log_games_with_random(model: DQN, number_of_games = OPPONENT_SYNC_EVERY, starting_episode = 0):
     random_env = create_random_players_env(num_enemies=1, reward_function = reward_function)
     #TODO: A lot of code repetition with the dqn. FIX!
     for episode in range(number_of_games + 1):
@@ -96,8 +96,8 @@ def log_games_with_random(model: DQN, number_of_games = OPPONENT_SYNC_EVERY):
 
         # save stats for game
         game_stats: dict = create_game_stats(random_env.unwrapped.game, Color.BLUE)
-        save_stats(game_stats, episode, total_loss, REAL_STATS_FILE,
-                epsilon=epsilon, total_reward=total_reward, mean_max_q=ep_mean_max_q)
+        save_stats(game_stats, episode + starting_episode, total_loss, REAL_STATS_FILE,
+                epsilon=0, total_reward=total_reward, mean_max_q=ep_mean_max_q)
 
 
 for episode in range(EPISODES + 1):
@@ -160,7 +160,7 @@ for episode in range(EPISODES + 1):
         opponent_net.eval()
         print(f"[episode {episode}] opponent synced to current policy")
         # Time to evaluate how better we are:
-        log_games_with_random(policy_net)
+        log_games_with_random(policy_net, starting_episode=episode - OPPONENT_SYNC_EVERY)
 
     if episode % (EPISODES // 5) == 0 and episode != 0:
         save_model(target_net, f"{SAVE_PREFIX}/dqn_episode_{episode}.pt")

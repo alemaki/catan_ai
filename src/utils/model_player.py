@@ -1,7 +1,8 @@
 from torch import Tensor
-from catanatron import Game
+from catanatron import Game, Action
 from catanatron.features import create_sample, get_feature_ordering
 from catanatron.models.player import Player
+from catanatron.gym.envs.catanatron_env import to_action_space
 
 class ActionSelectableModel():
     def select_action(self, observation: list, valid_actions: list, device: str = "cpu") -> int:
@@ -20,9 +21,28 @@ class ModelPlayer(Player):
     def set_model(self, model):
         self.model = model
 
-    def decide(self, game: Game, playable_actions):
+    def get_valid_actions(self, playable_actions)-> list[int]:
+        return list(map(to_action_space, playable_actions))
+
+    def decide(self, game: Game, playable_actions: list[Action]) -> Action:
         observation = self._get_observation(game)
-        return self.model.select_action(observation, playable_actions, device=self.device)
+        action_map = {
+            to_action_space(action): action
+            for action in playable_actions
+        }
+        chosen_action_id = self.model.select_action(
+            observation,
+            list(action_map.keys()),
+            device=self.device,
+        )
+        # Paranoia
+        if chosen_action_id not in action_map:
+            raise ValueError(
+                f"Model selected invalid action {chosen_action_id}. "
+                f"Valid actions are {list(action_map.keys())}"
+            )
+
+        return action_map[chosen_action_id]
     
     def _get_observation(self, game: Game) -> Tensor:
         sample = create_sample(game, self.color)

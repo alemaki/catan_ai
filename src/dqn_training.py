@@ -7,12 +7,13 @@ LEARNING_RATE = 3e-4
 MEMORY = 100_000
 EPISODES = 15_000
 N_STEPS = 1
-
+STARTING_EPISODE = 6001
 env = create_random_players_env(reward_function=reward_function, num_enemies=1)
 observation, _ = env.reset()
 
 policy_net = DQN(observation.shape[0], MAX_ACTION_COUNT).to(device)
 target_net = DQN(observation.shape[0], MAX_ACTION_COUNT).to(device)
+policy_net.load_state_dict(torch.load(os.path.join(MODELS_SAVE_PATH, "d3qn_smaller_stats_1v1_better_reward/dqn_episode_6000.pt"), map_location=device))
 
 target_net.load_state_dict(policy_net.state_dict())
 target_net.eval()
@@ -26,10 +27,11 @@ epsilon: float  = 1.0
 EPS_MIN: float = 0.001
 EPS_DECAY_STEP: float = (EPS_MIN / 1.0) ** (1 / 1_000_000) # Million steps to reach eps_min
 NORMALIZATION: bool = False
+epsilon = max(EPS_MIN, epsilon * (EPS_DECAY_STEP**(STARTING_EPISODE*200)))
 
 policy_net.train()
 
-for episode in range(EPISODES + 1):
+for episode in range(STARTING_EPISODE, EPISODES + 1):
     observation, info = env.reset()
     reset_reward_function()
     n_step_buffer.clear()
