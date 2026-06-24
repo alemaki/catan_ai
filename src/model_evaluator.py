@@ -1,6 +1,7 @@
 from utils.utils import *
 from utils.constants import *
 from utils.model_player import *
+from utils.player_constants import *
 from catanatron.game import Game, TURNS_LIMIT
 from itertools import combinations
 from collections import defaultdict
