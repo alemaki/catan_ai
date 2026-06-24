@@ -1,11 +1,10 @@
-"""
-Flask server wrapping catanatron's web app with support for trained model players.
-Run from the src/ directory: python server.py
-"""
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# Ensure src/ is on the path regardless of where this file lives, retarded language
+SRC = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, SRC)
+os.chdir(SRC)
 
 import torch
 from flask import jsonify
@@ -18,7 +17,7 @@ from catanatron.web import create_app
 
 from utils.model_player import ModelPlayer
 from utils.constants import MODELS_SAVE_PATH, MAX_ACTION_COUNT, device
-from utils.player_constants import *
+from utils.player_constants import model_players
 
 OBSERVATION_SHAPE = len(get_feature_ordering(num_players=2, map_type="BASE"))
 
@@ -53,7 +52,6 @@ def extended_player_factory(player_key):
         raise ValueError(f"Unknown player type: {type_str!r}")
 
 
-# Patch before app creation so the blueprint uses our factory at call time
 catanapi.player_factory = extended_player_factory
 
 app = create_app()
