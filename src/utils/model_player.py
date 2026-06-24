@@ -25,7 +25,7 @@ class ModelPlayer(Player):
         return list(map(to_action_space, playable_actions))
 
     def decide(self, game: Game, playable_actions: list[Action]) -> Action:
-        observation = self._get_observation(game)
+        observation = self.get_observation(game)
         action_map = {
             to_action_space(action): action
             for action in playable_actions
@@ -44,6 +44,6 @@ class ModelPlayer(Player):
 
         return action_map[chosen_action_id]
     
-    def _get_observation(self, game: Game) -> Tensor:
+    def get_observation(self, game: Game) -> Tensor:
         sample = create_sample(game, self.color)
         return Tensor([float(sample[i]) for i in self.features])
