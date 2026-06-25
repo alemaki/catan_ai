@@ -122,6 +122,24 @@ def save_model(model, filepath: str):
     torch.save(model.state_dict(), model_path)
 
 
+def get_knight_position_value(game: Game, agent_color: Color):
+    board = game.state.board
+    robber_coord = board.robber_coordinate
+    tile = board.map.land_tiles[robber_coord]
+    node_ids = tile.nodes.values()
+
+    value = 0
+    for node_id in node_ids:
+        building = board.buildings.get(node_id)
+        if building is not None:
+            color, building_type = building
+            factor = ROBBER_HURT_CITY_FACTOR if building_type == "CITY" else 1
+            if color != agent_color:
+                value += ROBBER_HURT_ENEMY_VALUE * factor
+            elif color == agent_color:
+                value += ROBBER_HURT_SELF_VALUE * factor
+    return value
+
 def reward_function(game: Game, agent_color: Color):
     reward = 0
     ps = game.state.player_state
@@ -153,6 +171,13 @@ def reward_function(game: Game, agent_color: Color):
     # if roads_built >= (cities_built + settlements_built)*2.5 + 3:
     #     reward -= ROAD_SPAM_PENALTY
 
+    if reward_function.was_moving_knight:
+        reward += get_knight_position_value(game, agent_color) * ROBBER_REWARD
+        reward_function.was_moving_knight = False
+    elif game.state.is_moving_knight:
+        reward_function.was_moving_knight = True
+
+
     # Win/loss
     if game.winning_color() is not None:
         reward += WIN_REWARD if game.winning_color() == agent_color else -WIN_REWARD
@@ -164,6 +189,7 @@ def reset_reward_function():
     reward_function.last_roads = 1
     reward_function.last_cities = 0
     reward_function.last_settlements = 0
+    reward_function.was_moving_knight = False
 
 reset_reward_function()
 

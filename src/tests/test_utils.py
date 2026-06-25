@@ -5,9 +5,10 @@ import gymnasium
 import catanatron.gym
 from catanatron.state_functions import player_key
 from models.dqn import reward_function, reset_reward_function, valid_actions_to_mask, ReplayMemory, NStepBuffer, DQNTransition, DQN, optimize_model, BATCH_SIZE
-from utils.utils import create_random_players_env, create_game_stats
-from utils.constants import MAX_ACTION_COUNT, VP_REWARD, CITY_REWARD, ROAD_REWARD, WIN_REWARD
+from utils.utils import create_random_players_env, create_game_stats, get_knight_position_value
+from utils.constants import *
 from catanatron import Color, Game
+from catanatron.models.enums import SETTLEMENT, CITY
 
 class TestRewardFunction(unittest.TestCase):
 
@@ -402,3 +403,138 @@ class TestCreateGameStatsPlayerIdentity(unittest.TestCase):
         before = create_game_stats(self.game)["mp_roads"]
         self.game.state.player_state[f"{self.enemy_key}_ROADS_AVAILABLE"] -= 2
         self.assertEqual(create_game_stats(self.game)["mp_roads"], before)
+
+
+class TestGetKnightPositionValue(unittest.TestCase):
+
+    def setUp(self):
+        env = create_random_players_env()
+        env.reset()
+        self.game = env.unwrapped.game
+        self.agent_color = Color.BLUE
+        self.enemy_color = Color.RED
+        board = self.game.state.board
+        tile = board.map.land_tiles[board.robber_coordinate]
+        self.robber_node_ids = list(tile.nodes.values())
+        # Clear any buildings that landed on the robber tile during setup
+        for node_id in self.robber_node_ids:
+            board.buildings.pop(node_id, None)
+
+    def test_no_buildings_gives_zero(self):
+        result = get_knight_position_value(self.game, self.agent_color)
+        self.assertEqual(result, 0)
+
+    def test_single_enemy_settlement_gives_robber_reward(self):
+        self.game.state.board.buildings[self.robber_node_ids[0]] = (self.enemy_color, SETTLEMENT)
+        result = get_knight_position_value(self.game, self.agent_color)
+        self.assertAlmostEqual(result, ROBBER_HURT_ENEMY_VALUE)
+
+    def test_two_enemy_settlements_give_double_reward(self):
+        self.game.state.board.buildings[self.robber_node_ids[0]] = (self.enemy_color, SETTLEMENT)
+        self.game.state.board.buildings[self.robber_node_ids[1]] = (self.enemy_color, SETTLEMENT)
+        result = get_knight_position_value(self.game, self.agent_color)
+        self.assertAlmostEqual(result, ROBBER_HURT_ENEMY_VALUE * 2)
+
+    def test_own_settlement_gives_self_hurt_reward(self):
+        self.game.state.board.buildings[self.robber_node_ids[0]] = (self.agent_color, SETTLEMENT)
+        result = get_knight_position_value(self.game, self.agent_color)
+        self.assertAlmostEqual(result, ROBBER_HURT_SELF_VALUE)
+
+    def test_enemy_and_own_building_get_grouped(self):
+        self.game.state.board.buildings[self.robber_node_ids[0]] = (self.enemy_color, SETTLEMENT)
+        self.game.state.board.buildings[self.robber_node_ids[1]] = (self.agent_color, SETTLEMENT)
+        result = get_knight_position_value(self.game, self.agent_color)
+        self.assertAlmostEqual(result, (ROBBER_HURT_SELF_VALUE + ROBBER_HURT_ENEMY_VALUE))
+
+    def test_enemy_city_gives_robber_reward(self):
+        self.game.state.board.buildings[self.robber_node_ids[0]] = (self.enemy_color, CITY)
+        result = get_knight_position_value(self.game, self.agent_color)
+        self.assertAlmostEqual(result, ROBBER_HURT_ENEMY_VALUE * ROBBER_HURT_CITY_FACTOR)
+
+    def test_own_city_gives_negative_reward(self):
+        self.game.state.board.buildings[self.robber_node_ids[0]] = (self.agent_color, CITY)
+        result = get_knight_position_value(self.game, self.agent_color)
+        self.assertAlmostEqual(result, ROBBER_HURT_SELF_VALUE * ROBBER_HURT_CITY_FACTOR)
+
+    def test_two_different_enemy_colors_each_give_reward(self):
+        self.game.state.board.buildings[self.robber_node_ids[0]] = (self.enemy_color, SETTLEMENT)
+        self.game.state.board.buildings[self.robber_node_ids[1]] = (Color.WHITE, SETTLEMENT)
+        result = get_knight_position_value(self.game, self.agent_color)
+        self.assertAlmostEqual(result, ROBBER_HURT_ENEMY_VALUE * 2)
+
+    def test_two_own_buildings_give_double_negative_reward(self):
+        self.game.state.board.buildings[self.robber_node_ids[0]] = (self.agent_color, SETTLEMENT)
+        self.game.state.board.buildings[self.robber_node_ids[1]] = (self.agent_color, SETTLEMENT)
+        result = get_knight_position_value(self.game, self.agent_color)
+        self.assertAlmostEqual(result, ROBBER_HURT_SELF_VALUE * 2)
+    
+    def test_robbing_own_city_is_worse_than_robbing_enemy_settlement(self):
+        self.game.state.board.buildings[self.robber_node_ids[0]] = (self.agent_color, CITY)
+        self.game.state.board.buildings[self.robber_node_ids[1]] = (Color.WHITE, SETTLEMENT)
+        result = get_knight_position_value(self.game, self.agent_color)
+        self.assertAlmostEqual(result, (ROBBER_HURT_SELF_VALUE * ROBBER_HURT_CITY_FACTOR + ROBBER_HURT_ENEMY_VALUE))
+        self.assertLess(result, 0)
+    
+    # This is more of a constants tests but is appropriate here
+    def test_robbing_own_city_is_worse_than_robbing_enemy_settlement(self):
+        self.game.state.board.buildings[self.robber_node_ids[0]] = (self.agent_color, CITY)
+        self.game.state.board.buildings[self.robber_node_ids[1]] = (Color.WHITE, SETTLEMENT)
+        result = get_knight_position_value(self.game, self.agent_color)
+        self.assertAlmostEqual(result, (ROBBER_HURT_SELF_VALUE * ROBBER_HURT_CITY_FACTOR + ROBBER_HURT_ENEMY_VALUE))
+        self.assertLess(result, 0)
+
+
+class TestRewardFunctionRobber(unittest.TestCase):
+
+    def setUp(self):
+        self.env = create_random_players_env(reward_function)
+        self.game = self.env.unwrapped.game
+        self.agent_color = Color.BLUE
+        self.enemy_color = Color.RED
+        reset_reward_function()
+        board = self.game.state.board
+        tile = board.map.land_tiles[board.robber_coordinate]
+        self.robber_node_ids = list(tile.nodes.values())
+        for node_id in self.robber_node_ids:
+            board.buildings.pop(node_id, None)
+
+    def _signal_knight_moving(self):
+        self.game.state.is_moving_knight = True
+        reward_function(self.game, self.agent_color)
+        self.game.state.is_moving_knight = False
+
+    def test_enemy_settlement_gives_reward_after_knight_move(self):
+        self._signal_knight_moving()
+        self.game.state.board.buildings[self.robber_node_ids[0]] = (self.enemy_color, SETTLEMENT)
+        reward = reward_function(self.game, self.agent_color)
+        self.assertAlmostEqual(reward, ROBBER_HURT_ENEMY_VALUE * ROBBER_REWARD)
+
+    def test_no_buildings_gives_zero_after_knight_move(self):
+        self._signal_knight_moving()
+        reward = reward_function(self.game, self.agent_color)
+        self.assertEqual(reward, 0)
+
+    def test_own_building_gives_negative_reward_after_knight_move(self):
+        self._signal_knight_moving()
+        self.game.state.board.buildings[self.robber_node_ids[0]] = (self.agent_color, SETTLEMENT)
+        reward = reward_function(self.game, self.agent_color)
+        self.assertAlmostEqual(reward, ROBBER_HURT_SELF_VALUE * ROBBER_REWARD)
+
+    def test_enemy_city_gives_scaled_reward_after_knight_move(self):
+        self._signal_knight_moving()
+        self.game.state.board.buildings[self.robber_node_ids[0]] = (self.enemy_color, CITY)
+        reward = reward_function(self.game, self.agent_color)
+        self.assertAlmostEqual(reward, ROBBER_HURT_ENEMY_VALUE * ROBBER_HURT_CITY_FACTOR * ROBBER_REWARD)
+
+    def test_robber_reward_not_given_without_knight_move(self):
+        self.game.state.board.buildings[self.robber_node_ids[0]] = (self.enemy_color, SETTLEMENT)
+        self.game.state.is_moving_knight = False
+        reward = reward_function(self.game, self.agent_color)
+        self.assertEqual(reward, 0)
+
+    def test_was_moving_knight_resets_after_reward(self):
+        self._signal_knight_moving()
+        self.game.state.board.buildings[self.robber_node_ids[0]] = (self.enemy_color, SETTLEMENT)
+        reward_function(self.game, self.agent_color)  # consumes was_moving_knight
+        reward = reward_function(self.game, self.agent_color)  # should not fire again
+        self.assertEqual(reward, 0)
